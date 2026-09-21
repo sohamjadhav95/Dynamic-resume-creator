@@ -132,13 +132,36 @@ button.secondary:hover {
 .sheet {
   background: #ffffff;
   width: 210mm;
-  /* Removed min-height to make it fully dynamic with content */
-  padding: 12mm 15mm;
+  padding: 10mm 15mm; /* Standard professional margins */
   box-shadow: 0 20px 40px rgba(0,0,0,0.4);
   font-size: 8.7pt;
   line-height: 1.35;
   color: #111111;
   border-radius: 2px;
+  position: relative;
+}
+
+/* Virtual A4 Limit Guide */
+.a4-guide {
+  position: absolute;
+  top: 297mm;
+  left: 0;
+  width: 100%;
+  border-top: 2px dashed #ef4444;
+  z-index: 50;
+  pointer-events: none;
+}
+.a4-guide::after {
+  content: "A4 Page Limit (Adjust toggles if content crosses this line)";
+  position: absolute;
+  top: -18px;
+  right: 15px;
+  color: #ef4444;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(255,255,255,0.9);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 /* Header Typography */
@@ -250,7 +273,7 @@ ul.bullet-list li {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm 12mm;
+    margin: 0; /* Let the sheet handle the padding identically to screen view */
   }
   body {
     background: none;
@@ -266,11 +289,7 @@ ul.bullet-list li {
   }
   .sheet {
     box-shadow: none;
-    width: 100%;
-    padding: 0;
-    min-height: auto;
     border-radius: 0;
+    /* Keeps exactly the same 10mm 15mm padding from screen view! */
   }
-  /* For print, maybe we want it to be purely black/white or keep the subtle green. 
-     Keeping the subtle green is usually fine for modern resumes. */
 }

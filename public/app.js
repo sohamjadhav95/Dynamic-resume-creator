@@ -192,6 +192,8 @@ function renderResume(data) {
         </div>
       `).join("")}
     </div>` : ''}
+    
+    <div class="a4-guide no-print"></div>
   `;
 }
 
