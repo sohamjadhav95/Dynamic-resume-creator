@@ -82,7 +82,7 @@ function renderCurrent() {
 }
 
 function renderResume(data) {
-  const container = document.getElementById("resume-sheet");
+  const container = document.getElementById("resume-container");
   
   const showSummary = document.getElementById("toggle-summary").checked;
   const showSkills = document.getElementById("toggle-skills").checked;
