@@ -13,15 +13,6 @@ class TailorRequest(BaseModel):
     jobDescription: str
 
 @app.post("/api/tailor")
-async def api_tailor(request: TailorRequest):
-    if not request.masterData or not request.jobDescription:
-        raise HTTPException(status_code=400, detail="Both masterData and jobDescription are required.")
-    
-    try:
-        # Call the logic in model.py
-        tailored_data = tailor_resume(request.masterData, request.jobDescription)
-        return tailored_data
-    except Exception as e:
         print(f"Error during tailoring: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

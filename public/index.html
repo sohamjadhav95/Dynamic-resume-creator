@@ -42,6 +42,7 @@
       <button id="btn-tailor" class="primary" onclick="handleTailor()">Tailor Resume</button>
       <button id="btn-print" class="secondary" onclick="window.print()">Print / Export PDF</button>
       <button id="btn-reset" class="secondary" onclick="resetToMaster()">View Master Resume</button>
+      <button id="btn-edit-master" class="secondary" onclick="openMasterEditor()">Edit Master Data (JSON)</button>
     </div>
 
     <div id="progress-container" style="display: none; margin-top: 15px;">
@@ -61,5 +62,23 @@
   </div>
 
   <script src="app.js"></script>
+
+  <!-- Editor Modal -->
+  <div id="editor-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); z-index: 100; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: #ffffff; width: 80%; max-width: 900px; height: 85%; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);">
+      <h2 style="color: #064e3b; margin: 0; font-size: 1.3rem; font-weight: 800;">Edit Master Resume JSON</h2>
+      <p style="color: #4b5563; font-size: 0.85rem; margin: 0;">Make direct changes to your master data below. This will be saved to your server's filesystem.</p>
+      
+      <textarea id="json-editor" style="flex: 1; font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; padding: 16px; border: 1px solid #d1d5db; border-radius: 8px; resize: none; background: #f8fafc; color: #0f172a; outline: none;"></textarea>
+      
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div id="editor-error" style="color: #ef4444; font-size: 0.85rem; font-weight: 600;"></div>
+        <div style="display: flex; gap: 12px;">
+          <button class="secondary" onclick="closeMasterEditor()">Cancel</button>
+          <button class="primary" onclick="saveMasterEditor()">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

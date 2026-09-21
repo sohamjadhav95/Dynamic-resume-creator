@@ -292,4 +292,59 @@ function resetToMaster() {
   document.getElementById("status-msg").innerText = "Viewing master resume.";
 }
 
+// Master Data Editor
+function openMasterEditor() {
+  const modal = document.getElementById("editor-modal");
+  const editor = document.getElementById("json-editor");
+  editor.value = JSON.stringify(masterData, null, 2);
+  document.getElementById("editor-error").innerText = "";
+  modal.style.display = "flex";
+}
+
+function closeMasterEditor() {
+  document.getElementById("editor-modal").style.display = "none";
+}
+
+async function saveMasterEditor() {
+  const editor = document.getElementById("json-editor");
+  const errorDiv = document.getElementById("editor-error");
+  
+  let newData;
+  try {
+    newData = JSON.parse(editor.value);
+  } catch (e) {
+    errorDiv.style.color = "#ef4444";
+    errorDiv.innerText = "Invalid JSON: " + e.message;
+    return;
+  }
+  
+  errorDiv.style.color = "#047857";
+  errorDiv.innerText = "Saving to server...";
+  
+  try {
+    const res = await fetch("/api/master", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newData)
+    });
+    
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Server Error: ${res.status}. ${errText.substring(0, 60)}`);
+    }
+    
+    // Update local state and re-render
+    masterData = newData;
+    currentData = JSON.parse(JSON.stringify(masterData));
+    generateItemToggles(masterData);
+    renderCurrent();
+    
+    closeMasterEditor();
+    document.getElementById("status-msg").innerText = "Master resume JSON updated and saved!";
+  } catch (e) {
+    errorDiv.style.color = "#ef4444";
+    errorDiv.innerText = e.message;
+  }
+}
+
 window.onload = init;
