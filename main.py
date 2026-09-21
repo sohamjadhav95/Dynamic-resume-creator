@@ -13,7 +13,22 @@ class TailorRequest(BaseModel):
     jobDescription: str
 
 @app.post("/api/tailor")
-        print(f"Error during tailoring: {e}")
+async def api_tailor(req: TailorRequest):
+    try:
+        result = tailor_resume(req.masterData, req.jobDescription)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/master")
+async def update_master_resume(new_data: dict):
+    try:
+        file_path = os.path.join("public", "master_resume.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            import json
+            json.dump(new_data, f, indent=2)
+        return {"message": "Master resume updated successfully"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 # Mount the static files directory at the root
