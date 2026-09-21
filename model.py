@@ -60,19 +60,32 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     
     prompt = f"Master Resume: {master_data}\n\nTarget Job Description:\n{job_description}"
     
-    # We use gemini-3.6-flash for structured output
-    response = client.models.generate_content(
-        model='gemini-3.5-flash',
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            response_mime_type="application/json",
-            response_schema=TailoredResume,
-            temperature=0.15,
-        ),
-    )
+    # Fallback loop for free models in case of rate limits or high demand
+    models_to_try = [
+        "gemini-3.6-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
+    ]
     
-    # The SDK automatically returns the text which is a JSON string matching the schema
-    # We can parse it and return as a dict
-    import json
-    return json.loads(response.text)
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    response_schema=TailoredResume,
+                    temperature=0.15,
+                ),
+            )
+            import json
+            return json.loads(response.text)
+        except Exception as e:
+            last_error = e
+            print(f"Warning: {model_name} failed with error: {e}. Trying next model...")
+            continue
+            
+    # If all models fail, raise the last error
+    raise Exception(f"All fallback models failed. Last error: {str(last_error)}")
