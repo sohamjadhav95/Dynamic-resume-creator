@@ -12,6 +12,10 @@ class TailorRequest(BaseModel):
     masterData: dict
     jobDescription: str
 
+class AnalyzeRequest(BaseModel):
+    resumeText: str
+    jobDescription: str
+
 @app.post("/api/tailor")
 async def api_tailor(req: TailorRequest):
     try:
@@ -28,6 +32,16 @@ async def update_master_resume(new_data: dict):
             import json
             json.dump(new_data, f, indent=2)
         return {"message": "Master resume updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/analyze")
+async def api_analyze(req: AnalyzeRequest):
+    try:
+        # Import dynamically if not imported at top
+        from model import analyze_resume
+        result = analyze_resume(req.resumeText, req.jobDescription)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -54,10 +54,55 @@
     <div id="status-msg" style="margin-top: 10px;">Master resume loaded. Ready.</div>
   </div>
 
-  <!-- Right Canvas Preview -->
-  <div class="preview-container">
-    <div class="sheet" id="resume-sheet">
-      <!-- Injected Dynamically by app.js -->
+  <!-- Right Pane -->
+  <div class="right-pane">
+    <div class="tabs-bar no-print">
+      <button id="tab-resume" class="tab-btn active" onclick="switchTab('resume')">Resume Preview</button>
+      <button id="tab-report" class="tab-btn" onclick="switchTab('report')">ATS Analysis Report</button>
+    </div>
+
+    <!-- Resume Preview -->
+    <div class="preview-container" id="resume-view">
+      <div id="resume-container" class="sheet">
+        <!-- Content injected by JS -->
+      </div>
+      <div class="a4-guide no-print"></div>
+    </div>
+
+    <!-- ATS Report View -->
+    <div class="report-container" id="report-view" style="display: none;">
+      <div class="report-header">
+        <h2>Targeted ATS Analysis</h2>
+        <p>Analyze how well your tailored resume matches the target Job Description.</p>
+        <button id="btn-run-analysis" class="primary" style="margin-top: 15px;" onclick="runATSAnalysis()">Run Analysis Now</button>
+      </div>
+      
+      <div id="analysis-loading" style="display: none; text-align: center; margin-top: 40px; color: #4b5563;">
+        <p>Analyzing keywords with AI... this may take up to 10 seconds.</p>
+      </div>
+
+      <div id="report-content" style="display: none;" class="report-split">
+        <div class="report-table-pane">
+          <table class="ats-table">
+            <thead>
+              <tr>
+                <th style="text-align: left;">Keyword or Skill</th>
+                <th>Count in JD</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="ats-tbody">
+              <!-- Injected by JS -->
+            </tbody>
+          </table>
+        </div>
+        <div class="report-jd-pane">
+          <h3 style="margin-bottom: 15px; color: #606c38;">Job Description Keywords</h3>
+          <div id="highlighted-jd" class="jd-text">
+            <!-- Injected by JS -->
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -35,6 +35,14 @@ class TailoredResume(BaseModel):
     experience: List[ExperienceEntry]
     projects: List[ProjectEntry]
 
+class ATSKeyword(BaseModel):
+    skill: str = Field(description="The exact hard skill or keyword found in the Job Description")
+    count_in_jd: int = Field(description="Number of times this skill appears in the Job Description")
+    found_in_resume: bool = Field(description="True if the exact or synonymous skill is present in the Tailored Resume Text")
+
+class ATSAnalysisResult(BaseModel):
+    keywords: List[ATSKeyword] = Field(description="List of top 10-15 hard skills and keywords extracted from the JD")
+
 def tailor_resume(master_data: dict, job_description: str) -> dict:
     """
     Calls the Gemini API to tailor the master resume based on the job description.
@@ -101,3 +109,52 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
             
     # If all models fail, raise the last error
     raise Exception(f"All fallback models failed. Last error: {str(last_error)}")
+
+def analyze_resume(resume_text: str, job_description: str) -> dict:
+    """
+    Extracts keywords from the Job Description and checks if they are present in the Tailored Resume.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise Exception("GEMINI_API_KEY is missing! Please add it to your Vercel Environment Variables.")
+        
+    client = genai.Client(api_key=api_key)
+    
+    system_instruction = """
+    You are an expert ATS Resume Analyzer.
+    1. Read the provided Job Description and extract the top 10 to 15 critical "Hard Skills" or "Keywords" (e.g., Python, Machine Learning, Agile, Budgeting).
+    2. Count how many times each keyword appears in the Job Description.
+    3. Read the provided Tailored Resume Text.
+    4. For each extracted keyword, determine if it exists (or a very close synonym exists) in the Tailored Resume Text.
+    5. Return the list of keywords following the exact JSON schema provided.
+    """
+    
+    prompt = f"Target Job Description:\n{job_description}\n\nTailored Resume Text:\n{resume_text}"
+    
+    models_to_try = [
+        "gemini-3.6-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
+    ]
+    
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    response_mime_type="application/json",
+                    response_schema=ATSAnalysisResult,
+                    temperature=0.1,
+                ),
+            )
+            import json
+            return json.loads(response.text)
+        except Exception as e:
+            last_error = e
+            print(f"Warning: {model_name} failed with error: {e}. Trying next model...")
+            continue
+            
+    raise Exception(f"All fallback models failed for analysis. Last error: {str(last_error)}")

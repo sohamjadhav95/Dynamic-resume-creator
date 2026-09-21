@@ -347,4 +347,134 @@ async function saveMasterEditor() {
   }
 }
 
+// ----------------------------------------------------
+// ATS Analysis Report Logic
+// ----------------------------------------------------
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  
+  if (tabId === 'resume') {
+    document.getElementById('resume-view').style.display = 'flex';
+    document.getElementById('report-view').style.display = 'none';
+  } else {
+    document.getElementById('resume-view').style.display = 'none';
+    document.getElementById('report-view').style.display = 'flex';
+  }
+}
+
+async function runATSAnalysis() {
+  const jobDesc = document.getElementById("job-desc").value;
+  if (!jobDesc) {
+    alert("Please paste a Job Description in the text box on the left first.");
+    return;
+  }
+  
+  const btn = document.getElementById("btn-run-analysis");
+  const loading = document.getElementById("analysis-loading");
+  const content = document.getElementById("report-content");
+  
+  btn.disabled = true;
+  loading.style.display = "block";
+  content.style.display = "none";
+  
+  // We send the current active text to the backend for analysis
+  const resumeText = JSON.stringify(currentData);
+  
+  try {
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resumeText: resumeText, jobDescription: jobDesc })
+    });
+    
+    if (!res.ok) {
+      const errText = await res.text();
+      let errMsg = "Server Error";
+      try {
+        const errJson = JSON.parse(errText);
+        errMsg = errJson.detail || errJson.error || "Failed to analyze";
+      } catch(e) {
+        errMsg = `Server Error: ${res.status}. ${errText.substring(0, 60)}...`;
+      }
+      throw new Error(errMsg);
+    }
+    
+    const analysis = await res.json();
+    renderAnalysis(analysis, jobDesc);
+    content.style.display = "flex"; // Show content only on success
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false;
+    loading.style.display = "none";
+  }
+}
+
+function renderAnalysis(analysis, jobDesc) {
+  const tbody = document.getElementById("ats-tbody");
+  tbody.innerHTML = "";
+  
+  if (!analysis.keywords || analysis.keywords.length === 0) {
+    tbody.innerHTML = "<tr><td colspan='3'>No keywords extracted.</td></tr>";
+    document.getElementById("highlighted-jd").innerText = jobDesc;
+    return;
+  }
+  
+  // Sort keywords: missing first, then by count descending
+  analysis.keywords.sort((a, b) => {
+    if (a.found_in_resume !== b.found_in_resume) {
+      return a.found_in_resume ? 1 : -1; // missing (-1) comes before found (1)
+    }
+    return b.count_in_jd - a.count_in_jd;
+  });
+  
+  // Render table
+  analysis.keywords.forEach(kw => {
+    const tr = document.createElement("tr");
+    const statusClass = kw.found_in_resume ? "status-found" : "status-missing";
+    const statusText = kw.found_in_resume ? "Found" : "Missing";
+    
+    tr.innerHTML = `
+      <td>${kw.skill}</td>
+      <td>${kw.count_in_jd}</td>
+      <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  // Highlight JD
+  // Basic implementation: escape HTML, then wrap keywords in <mark>
+  let highlightedJd = jobDesc
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+    
+  // Sort by length descending so longer phrases match first to prevent partial word overlap issues
+  const sortedKeywords = [...analysis.keywords].sort((a, b) => b.skill.length - a.skill.length);
+  
+  sortedKeywords.forEach(kw => {
+    // case-insensitive regex for the keyword
+    // Using \b word boundaries so we don't highlight inside other words
+    // We catch exceptions in case a keyword has weird regex characters
+    try {
+      // Escape regex specials
+      const escapedSkill = kw.skill.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regex = new RegExp(`\\b(${escapedSkill})\\b`, 'gi');
+      const markClass = kw.found_in_resume ? "mark-found" : "mark-missing";
+      
+      // We must avoid double replacing marks. 
+      // A safe way for a simple prototype is to just replace. In a robust system, we'd use a real highlighter tree.
+      highlightedJd = highlightedJd.replace(regex, `<mark class="${markClass}">$1</mark>`);
+    } catch(e) {
+      console.log("Regex error on word", kw.skill, e);
+    }
+  });
+  
+  // Fix nested marks by removing inner ones (crude fix for simple text)
+  highlightedJd = highlightedJd.replace(/<mark[^>]*>((?:(?!<\/mark>).)*?)<mark[^>]*>(.*?)<\/mark>((?:(?!<\/mark>).)*?)<\/mark>/gi, '<mark class="mark-found">$1$2$3</mark>');
+
+  document.getElementById("highlighted-jd").innerHTML = highlightedJd;
+}
+
 window.onload = init;
