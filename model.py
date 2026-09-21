@@ -8,9 +8,6 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Initialize Gemini Client
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
 # Define Pydantic schema for structured output
 class Skills(BaseModel):
     languages: str
@@ -42,6 +39,12 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     """
     Calls the Gemini API to tailor the master resume based on the job description.
     """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise Exception("GEMINI_API_KEY is missing! Please add it to your Vercel Environment Variables.")
+        
+    client = genai.Client(api_key=api_key)
+    
     system_instruction = """
     You are an expert ATS Resume Optimization Engine. You will be provided with:
     1. Master Resume Data (Ground Truth - facts, metrics, tools, experiences).
@@ -62,9 +65,11 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     
     # Fallback loop for free models in case of rate limits or high demand
     models_to_try = [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
         "gemini-3.6-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro"
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
     ]
     
     last_error = None

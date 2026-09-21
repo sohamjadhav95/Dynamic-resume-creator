@@ -245,8 +245,15 @@ async function handleTailor() {
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || err.error || "Failed to tailor");
+      const errText = await res.text();
+      let errMsg = "Failed to tailor";
+      try {
+        const errJson = JSON.parse(errText);
+        errMsg = errJson.detail || errJson.error || "Failed to tailor";
+      } catch (e) {
+        errMsg = `Server Error: ${res.status}. ${errText.substring(0, 60)}...`;
+      }
+      throw new Error(errMsg);
     }
 
     const tailored = await res.json();
