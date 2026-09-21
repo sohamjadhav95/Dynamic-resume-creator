@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Resume Tailor ATS</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Left Control Panel -->
+  <div class="control-panel no-print">
+    <div class="panel-header">
+      <h1>ATS Resume Compiler</h1>
+      <p>Targeted optimization powered by Gemini 3.6 Flash</p>
+    </div>
+    
+    <label for="job-desc" style="font-size: 0.85rem; font-weight: 600;">Job Description:</label>
+    <textarea id="job-desc" placeholder="Paste target Job Description here..."></textarea>
+    
+    <details style="margin-top: 10px; border: 1px solid #e5e9e7; border-radius: 6px; padding: 12px; background: #f9fafb; transition: all 0.2s ease;">
+      <summary style="font-size: 0.9rem; font-weight: 700; color: #064e3b; cursor: pointer; user-select: none; outline: none;">Toggle Entire Sections</summary>
+      <div class="section-toggles" style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; margin-bottom: 4px;">
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-summary" checked onchange="renderCurrent()"> Professional Summary</label>
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-skills" checked onchange="renderCurrent()"> Technical Skills</label>
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-experience" checked onchange="renderCurrent()"> Professional Experience</label>
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-projects" checked onchange="renderCurrent()"> Projects</label>
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-publications" checked onchange="renderCurrent()"> Research & Publications</label>
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-opensource" checked onchange="renderCurrent()"> Open Source Contributions</label>
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-certifications" checked onchange="renderCurrent()"> Certifications</label>
+        <label style="font-weight: normal; margin-bottom: 0; display: flex; align-items: center; gap: 6px;"><input type="checkbox" id="toggle-education" checked onchange="renderCurrent()"> Education</label>
+      </div>
+    </details>
+
+    <details style="margin-bottom: 15px; margin-top: 10px; border: 1px solid #e5e9e7; border-radius: 6px; padding: 12px; background: #f9fafb; transition: all 0.2s ease;">
+      <summary style="font-size: 0.9rem; font-weight: 700; color: #064e3b; cursor: pointer; user-select: none; outline: none;">Filter Specific Items</summary>
+      <div id="item-toggles" style="display: flex; flex-direction: column; gap: 4px; margin-top: 10px;">
+        <!-- Populated by JS -->
+      </div>
+    </details>
+
+    <div class="btn-group">
+      <button id="btn-tailor" class="primary" onclick="handleTailor()">Tailor Resume</button>
+      <button id="btn-print" class="secondary" onclick="window.print()">Print / Export PDF</button>
+      <button id="btn-reset" class="secondary" onclick="resetToMaster()">View Master Resume</button>
+    </div>
+
+    <div id="progress-container" style="display: none; margin-top: 15px;">
+      <div style="width: 100%; background: #e2e8f0; border-radius: 4px; height: 8px; overflow: hidden;">
+        <div id="progress-bar" style="width: 0%; height: 100%; background: #10b981; transition: width 0.5s ease;"></div>
+      </div>
+    </div>
+
+    <div id="status-msg" style="margin-top: 10px;">Master resume loaded. Ready.</div>
+  </div>
+
+  <!-- Right Canvas Preview -->
+  <div class="preview-container">
+    <div class="sheet" id="resume-sheet">
+      <!-- Injected Dynamically by app.js -->
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
