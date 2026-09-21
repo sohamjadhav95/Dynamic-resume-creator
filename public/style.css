@@ -30,7 +30,7 @@ body {
 .panel-header h1 {
   font-size: 1.4rem;
   font-weight: 800;
-  color: #064e3b; /* Dark Emerald */
+  color: #606c38; /* Olive Garden Feast */
   letter-spacing: -0.02em;
 }
 
@@ -42,7 +42,7 @@ body {
 }
 
 label {
-  color: #064e3b;
+  color: #606c38;
   font-size: 0.9rem;
   font-weight: 600;
   margin-bottom: -10px;
@@ -63,9 +63,9 @@ textarea#job-desc {
 
 textarea#job-desc:focus {
   outline: none;
-  border-color: #10b981;
+  border-color: #606c38;
   background-color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 0 3px rgba(96, 108, 56, 0.15);
 }
 
 .btn-group {
@@ -87,13 +87,13 @@ button {
 }
 
 button.primary {
-  background-color: #047857; /* Emerald 700 */
+  background-color: #606c38; /* Olive Garden Feast */
   color: #ffffff;
-  box-shadow: 0 4px 6px -1px rgba(4, 120, 87, 0.2), 0 2px 4px -1px rgba(4, 120, 87, 0.1);
+  box-shadow: 0 4px 6px -1px rgba(96, 108, 56, 0.2), 0 2px 4px -1px rgba(96, 108, 56, 0.1);
 }
 
 button.primary:hover {
-  background-color: #065f46; /* Emerald 800 */
+  background-color: #4a532b; /* Darker Olive */
   transform: translateY(-1px);
 }
 
@@ -102,13 +102,13 @@ button.primary:active {
 }
 
 button.secondary {
-  background-color: #ecfdf5; /* Emerald 50 */
-  color: #047857; /* Emerald 700 */
-  border: 1px solid #a7f3d0; /* Emerald 200 */
+  background-color: #f4f6ef; /* Very Light Olive */
+  color: #606c38; 
+  border: 1px solid #c9d0b5; 
 }
 
 button.secondary:hover {
-  background-color: #d1fae5; /* Emerald 100 */
+  background-color: #e9ece2; /* Light Olive Hover */
 }
 
 #status-msg {
@@ -174,18 +174,18 @@ button.secondary:hover {
   font-weight: 800;
   letter-spacing: -0.3px;
   text-transform: none;
-  color: #064e3b; /* Dark Emerald Accent */
+  color: #000000; /* Plain Black */
 }
 .resume-header .contact-bar {
   font-size: 8.2pt;
   margin-top: 4px;
-  color: #333;
+  color: #222222;
 }
 .resume-header .badge-bar {
   font-size: 8.6pt;
   font-weight: 600;
   margin-top: 4px;
-  color: #065f46;
+  color: #333333;
 }
 
 /* Section Rule */
@@ -196,8 +196,8 @@ button.secondary:hover {
   font-size: 9.3pt;
   font-weight: 800;
   text-transform: uppercase;
-  border-bottom: 1.5px solid #064e3b;
-  color: #064e3b;
+  border-bottom: 1.5px solid #111111;
+  color: #111111;
   padding-bottom: 2px;
   margin-bottom: 5px;
   letter-spacing: 0.5px;
@@ -216,7 +216,7 @@ button.secondary:hover {
 .skills-table .skill-cat {
   font-weight: 700;
   width: 130px;
-  color: #064e3b;
+  color: #111111;
 }
 
 /* Experience & Projects */
@@ -235,7 +235,7 @@ button.secondary:hover {
 .entry-header .date-right {
   font-weight: 600;
   text-align: right;
-  color: #047857;
+  color: #333333;
 }
 .entry-sub {
   display: flex;
