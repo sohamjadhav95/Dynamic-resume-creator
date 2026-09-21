@@ -54,7 +54,8 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     - NEVER invent new employers, projects, metrics, or technologies not grounded in Master Resume Data.
     - DO NOT alter company names, project names, or role titles. ONLY modify the descriptive bullet points and the skills list to better match the Job Description.
     - Select and prioritize the most relevant projects (maximum 4) that directly match the JD.
-    - Re-align action verbs and emphasize matching technical proficiencies to maximize ATS relevancy.
+    - TONE & STYLE (CRITICAL): Write in a highly natural, human-like, and direct professional tone. AVOID robotic AI patterns, cliché buzzwords (e.g., "spearheaded", "synergized", "delved", "unleashed"), and overly complex corporate jargon. Write as if a real engineer is describing their work.
+    - CONTENT FOCUS: Use the "Hook -> Action -> Result" framework. Bullet points should clearly state the specific problem you solved, the exact action taken, and concrete business/technical results, rather than just listing general responsibilities. Make them punchy and interesting.
     - STRICT LENGTH CONSTRAINTS (CRITICAL for formatting):
         - Each line/category in the "skills" section must NOT exceed 15 words. Keep them as concise comma-separated lists.
         - Each bullet point in the "experience" and "projects" sections must NOT exceed 30 words (strictly 1 to 2 lines max). Do not expand short points into paragraphs.
@@ -67,9 +68,15 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     # WARNING: Do not put invalid models at the top. 
     # Vercel's free tier has a strict 10-second timeout. Testing invalid models wastes seconds on HTTP errors and causes a crash.
     models_to_try = [
-        "gemini-3.6-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro"
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
     ]
     
     last_error = None
