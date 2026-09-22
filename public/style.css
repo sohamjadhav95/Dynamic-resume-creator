@@ -316,9 +316,11 @@ button.secondary:hover {
   color: #000000; /* Plain Black */
 }
 .resume-header .contact-bar {
-  font-size: 8.2pt;
+  font-size: 7.6pt;
+  letter-spacing: -0.1px;
   margin-top: 4px;
   color: #222222;
+  white-space: nowrap;
 }
 .resume-header .badge-bar {
   font-size: 8.6pt;
