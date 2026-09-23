@@ -59,8 +59,9 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     2. Target Job Description (Target role criteria).
     
     Strict Rules:
-    - NEVER invent new employers, projects, metrics, or technologies not grounded in Master Resume Data.
-    - DO NOT alter company names, project names, or role titles. ONLY modify the descriptive bullet points and the skills list to better match the Job Description.
+    - NEVER invent new employers or completely fabricated work experiences.
+    - ATS KEYWORD OPTIMIZATION (CRITICAL): Actively identify missing hard skills and keywords from the Job Description and seamlessly inject them into the 'skills' section and project bullet points WHEREVER conceptually plausible. If the Master Resume has a generic term (e.g., 'Cloud Deployments') and the JD asks for specific tools (e.g., 'AWS', 'Azure'), aggressively replace or append the specific JD keywords to maximize the ATS match score.
+    - DO NOT alter company names, project names, or role titles. ONLY modify the descriptive bullet points and the skills list.
     - Select and prioritize the most relevant projects (maximum 4) that directly match the JD.
     - TONE & STYLE (CRITICAL): Write in a highly natural, human-like, and direct professional tone. AVOID robotic AI patterns, cliché buzzwords (e.g., "spearheaded", "synergized", "delved", "unleashed"), and overly complex corporate jargon. Write as if a real engineer is describing their work.
     - CONTENT FOCUS: Use the "Hook -> Action -> Result" framework. Bullet points should clearly state the specific problem you solved, the exact action taken, and concrete business/technical results, rather than just listing general responsibilities. Make them punchy and interesting.
