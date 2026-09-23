@@ -439,17 +439,17 @@ ul.bullet-list li {
     size: auto; /* Allows user to select A4 or Legal in the print dialog */
     margin: 0; /* Let the sheet handle the padding identically to screen view */
   }
-  body {
+  body, .right-pane, .preview-container {
     background: none;
-    height: auto;
-    overflow: visible;
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
   }
   .no-print {
     display: none !important;
   }
   .preview-container {
     padding: 0;
-    background: none;
   }
   .sheet {
     box-shadow: none;
