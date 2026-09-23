@@ -436,7 +436,7 @@ ul.bullet-list li {
 /* Print Overrides */
 @media print {
   @page {
-    size: A4 portrait;
+    size: auto; /* Allows user to select A4 or Legal in the print dialog */
     margin: 0; /* Let the sheet handle the padding identically to screen view */
   }
   body {
