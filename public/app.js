@@ -108,12 +108,9 @@ function renderResume(data) {
     <div class="section">
       <div class="section-title">TECHNICAL SKILLS</div>
       <table class="skills-table">
-        <tr><td class="skill-cat">Languages</td><td>${data.skills.languages}</td></tr>
-        <tr><td class="skill-cat">Generative AI</td><td>${data.skills.generative_ai}</td></tr>
-        <tr><td class="skill-cat">ML/DL</td><td>${data.skills.ml_dl}</td></tr>
-        <tr><td class="skill-cat">Data & Systems</td><td>${data.skills.data_systems}</td></tr>
-        <tr><td class="skill-cat">Architecture</td><td>${data.skills.architecture}</td></tr>
-        <tr><td class="skill-cat">Deployment & MLOps</td><td>${data.skills.deployment_mlops}</td></tr>
+        <tr><td class="skill-cat">Core & Languages</td><td>${data.skills.languages_and_core || ''}</td></tr>
+        <tr><td class="skill-cat">GenAI & Agentic AI</td><td>${data.skills.generative_and_agentic_ai || ''}</td></tr>
+        <tr><td class="skill-cat">ML Systems & CV</td><td>${data.skills.ml_systems_and_cv || ''}</td></tr>
       </table>
     </div>` : ''}
     ${showExperience && data.experience && data.experience.length > 0 ? `
@@ -156,11 +153,11 @@ function renderResume(data) {
       ${data.publications.map(pub => `
         <div class="entry">
           <div class="entry-header">
-            <span class="title-left">${pub.title}</span>
-            <span class="date-right">${pub.status}</span>
+            <span class="title-left">${pub.title} | <em>${pub.venue}</em></span>
+            <span class="date-right">${pub.year}</span>
           </div>
           <ul class="bullet-list">
-            ${pub.bullets.map(b => `<li>${b}</li>`).join("")}
+            <li>${pub.details}</li>
           </ul>
         </div>
       `).join("")}
@@ -169,15 +166,20 @@ function renderResume(data) {
     <div class="section">
       <div class="section-title">OPEN SOURCE CONTRIBUTIONS</div>
       ${data.open_source.map(os => `
-        <div class="os-item">
-          <strong>${os.project}</strong> | ${os.details}
+        <div class="entry" style="margin-bottom: 2px;">
+          <div class="entry-header">
+            <span class="title-left">${os.project}</span>
+          </div>
+          <ul class="bullet-list">
+            ${(os.bullets || []).map(b => `<li>${b}</li>`).join("")}
+          </ul>
         </div>
       `).join("")}
     </div>` : ''}
-    ${showCertifications && data.certifications ? `
+    ${showCertifications && data.certifications && data.certifications.length > 0 ? `
     <div class="section">
       <div class="section-title">CERTIFICATIONS & ACHIEVEMENTS</div>
-      <p style="font-size: 8.5pt;">${data.certifications}</p>
+      <p style="font-size: 8.5pt;">${Array.isArray(data.certifications) ? data.certifications.join(" | ") : data.certifications}</p>
     </div>` : ''}
     ${showEducation && data.education && data.education.length > 0 ? `
     <div class="section">

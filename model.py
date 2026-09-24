@@ -10,12 +10,9 @@ load_dotenv()
 
 # Define Pydantic schema for structured output
 class Skills(BaseModel):
-    languages: str
-    generative_ai: str
-    ml_dl: str
-    data_systems: str
-    architecture: str
-    deployment_mlops: str
+    languages_and_core: str
+    generative_and_agentic_ai: str
+    ml_systems_and_cv: str
 
 class ExperienceEntry(BaseModel):
     role: str
