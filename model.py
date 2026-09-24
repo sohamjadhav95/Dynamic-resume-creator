@@ -108,9 +108,15 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     prompt = f"Master Resume:\n{master_data}\n\nTarget Job Description:\n{job_description}"
     
     models_to_try = [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
     ]
     
     last_error = None
@@ -156,9 +162,15 @@ def analyze_resume(resume_text: str, job_description: str) -> dict:
     prompt = f"Target Job Description:\n{job_description}\n\nTailored Resume Text:\n{resume_text}"
     
     models_to_try = [
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
     ]
     
     last_error = None
