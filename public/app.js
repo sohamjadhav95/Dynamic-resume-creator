@@ -58,7 +58,11 @@ function getFilteredData(data) {
     filtered.experience = filtered.experience.filter(e => activeExps.includes(e.company));
   }
   if (filtered.projects) {
-    filtered.projects = filtered.projects.filter(p => activeProjs.includes(p.name));
+    filtered.projects = filtered.projects.filter(p => {
+      if (activeProjs.includes(p.name)) return true;
+      const isDynamic = !masterData.projects.some(mp => mp.name === p.name);
+      return isDynamic && activeProjs.includes("DYNAMIC_TARGET_PROJECT");
+    });
   }
   if (filtered.research_and_open_source) {
     filtered.research_and_open_source = filtered.research_and_open_source.filter(p => activeROS.includes(p.title));
