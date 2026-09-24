@@ -5,32 +5,50 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Define Pydantic schema for structured output
-class Skills(BaseModel):
-    languages_and_core: str
-    generative_and_agentic_ai: str
-    ml_systems_and_cv: str
+# Schema for 3 dynamic, ATS-aligned skill lines
+class SkillCategory(BaseModel):
+    category_name: str = Field(
+        description="Dynamic category title matching the JD (e.g., 'Languages & Core Frameworks', 'Generative & Agentic AI', 'ML Systems & Computer Vision')"
+    )
+    skills: str = Field(
+        description="Comma-separated skills list. STRICT LIMIT: Under 15 words."
+    )
 
 class ExperienceEntry(BaseModel):
     role: str
     company: str
     timeline: str
-    bullets: List[str]
+    bullets: List[str] = Field(
+        description="Exactly 2 punchy bullet points adhering to Hook -> Action -> Result. Max 30 words each."
+    )
 
 class ProjectEntry(BaseModel):
-    name: str
-    timeline: str
-    stack: str
-    bullets: List[str]
+    name: str = Field(description="Project title.")
+    timeline: str = Field(description="Project timeline e.g., '2025 - 2026' or '2026'.")
+    stack: str = Field(description="Comma-separated tech stack list.")
+    bullets: List[str] = Field(
+        description="STRICTLY 1 high-impact bullet point following Problem -> Architecture -> Metric. Max 30 words."
+    )
 
 class TailoredResume(BaseModel):
-    summary: str = Field(description="A tailored 2-3 sentence professional summary focusing on requirements found in the JD.")
-    skills: Skills
-    experience: List[ExperienceEntry]
-    projects: List[ProjectEntry]
+    summary: str = Field(
+        description="Tailored professional summary. STRICT LIMIT: Between 35 and 45 words (maximum 3 lines). Must reflect the target role while keeping ground-truth credentials."
+    )
+    skills: List[SkillCategory] = Field(
+        description="STRICTLY 3 skill categories tailored to the JD.",
+        min_length=3,
+        max_length=3
+    )
+    experience: List[ExperienceEntry] = Field(
+        description="The 2 professional experience entries tailored to the JD."
+    )
+    projects: List[ProjectEntry] = Field(
+        description="Exactly 4 projects: #1 Convo-Ease, #2 Dynamic Chameleon Project, #3 Copilot for DS, #4 RenAIssance OCR.",
+        min_length=4,
+        max_length=4
+    )
 
 class ATSKeyword(BaseModel):
     skill: str = Field(description="The exact hard skill or keyword found in the Job Description")
@@ -46,43 +64,53 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise Exception("GEMINI_API_KEY is missing! Please add it to your Vercel Environment Variables.")
+        raise Exception("GEMINI_API_KEY is missing! Please add it to your environment variables.")
         
     client = genai.Client(api_key=api_key)
     
     system_instruction = """
-    You are an expert ATS Resume Optimization Engine. You will be provided with:
+    You are an expert ATS Resume Optimization Engine. You will receive:
     1. Master Resume Data (Ground Truth - facts, metrics, tools, experiences).
     2. Target Job Description (Target role criteria).
+
+    Core Tailoring Rules:
+    - NEVER invent employers, formal degrees, or unearned credentials.
+    - ATS KEYWORD INJECTION: Actively extract critical hard skills/keywords from the JD and inject them into the 'skills' section and project descriptions wherever plausible.
     
-    Strict Rules:
-    - NEVER invent new employers or completely fabricated work experiences.
-    - ATS KEYWORD OPTIMIZATION (CRITICAL): Actively identify missing hard skills and keywords from the Job Description and seamlessly inject them into the 'skills' section and project bullet points WHEREVER conceptually plausible. If the Master Resume has a generic term (e.g., 'Cloud Deployments') and the JD asks for specific tools (e.g., 'AWS', 'Azure'), aggressively replace or append the specific JD keywords to maximize the ATS match score.
-    - DO NOT alter company names, project names, or role titles. ONLY modify the descriptive bullet points and the skills list.
-    - Select and prioritize the most relevant projects (maximum 4) that directly match the JD.
-    - TONE & STYLE (CRITICAL): Write in a highly natural, human-like, and direct professional tone. AVOID robotic AI patterns, cliché buzzwords (e.g., "spearheaded", "synergized", "delved", "unleashed"), and overly complex corporate jargon. Write as if a real engineer is describing their work.
-    - CONTENT FOCUS: Use the "Hook -> Action -> Result" framework. Bullet points should clearly state the specific problem you solved, the exact action taken, and concrete business/technical results, rather than just listing general responsibilities. Make them punchy and interesting.
-    - STRICT LENGTH CONSTRAINTS (CRITICAL for formatting):
-        - Each line/category in the "skills" section must NOT exceed 15 words. Keep them as concise comma-separated lists.
-        - Each bullet point in the "experience" and "projects" sections must NOT exceed 30 words (strictly 1 to 2 lines max). Do not expand short points into paragraphs.
-    - Return ONLY valid JSON adhering strictly to the provided schema.
+    SECTION-BY-SECTION CONSTRAINTS (STRICT A4 FORMATTING):
+    
+    1. PROFESSIONAL SUMMARY:
+       - Length: Strictly between 35 and 45 words (maximum 3 lines).
+       - Maintain grounding: Highlight relevant strengths for the role while maintaining real credibility (e.g., Springer Nature research, open-source systems).
+
+    2. TECHNICAL SKILLS:
+       - Output STRICTLY 3 categories (lines).
+       - The category names must be dynamically tailored to the target role (e.g., if applying for ML Ops, line 3 can be 'MLOps & Cloud Infrastructure'; if CV, 'Computer Vision & Deep Learning').
+       - Each category's skills string must NOT exceed 15 words. Keep them as clean, comma-separated lists.
+
+    3. PROFESSIONAL EXPERIENCE:
+       - Keep company names, roles, and timelines identical to the master resume.
+       - Exactly 2 bullets per experience item.
+       - Each bullet must NOT exceed 30 words (strictly 1 to 2 lines max). Use Hook -> Action -> Metric.
+
+    4. PROJECTS (4 TOTAL):
+       - Project 1: 'Convo-Ease: Intelligent Multi-Modal Content Moderation' (Keep title fixed; tailor stack and bullet).
+       - Project 2 (DYNAMIC CHAMELEON SLOT): Create or adapt this project to be the HIGHEST direct match for the JD's core focus.
+         * Realism Rule: The project architecture must be practical and realistic—something an engineer can build end-to-end within 24 hours using Python, FastAPI, LangGraph/LangChain, Vector DBs, PyTorch, or Docker.
+         * Structure: Title, Timeline (2026), Stack (relevant to JD), and exactly 1 bullet (Problem -> Architecture -> Result metric).
+       - Project 3: 'Copilot for Data Science and Analysis' (Keep title fixed; tailor stack and bullet).
+       - Project 4: 'RenAIssance OCR: Historical Document Recognition' (Keep title fixed; tailor stack and bullet).
+       - Each project must have EXACTLY 1 bullet point of under 30 words.
+
+    Return ONLY valid JSON adhering strictly to the provided schema.
     """
     
-    prompt = f"Master Resume: {master_data}\n\nTarget Job Description:\n{job_description}"
+    prompt = f"Master Resume:\n{master_data}\n\nTarget Job Description:\n{job_description}"
     
-    # Fallback loop for free models in case of rate limits or high demand
-    # WARNING: Do not put invalid models at the top. 
-    # Vercel's free tier has a strict 10-second timeout. Testing invalid models wastes seconds on HTTP errors and causes a crash.
     models_to_try = [
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
     ]
     
     last_error = None
@@ -105,7 +133,6 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
             print(f"Warning: {model_name} failed with error: {e}. Trying next model...")
             continue
             
-    # If all models fail, raise the last error
     raise Exception(f"All fallback models failed. Last error: {str(last_error)}")
 
 def analyze_resume(resume_text: str, job_description: str) -> dict:
@@ -114,31 +141,24 @@ def analyze_resume(resume_text: str, job_description: str) -> dict:
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise Exception("GEMINI_API_KEY is missing! Please add it to your Vercel Environment Variables.")
+        raise Exception("GEMINI_API_KEY is missing! Please add it to your environment variables.")
         
     client = genai.Client(api_key=api_key)
     
     system_instruction = """
     You are an expert ATS Resume Analyzer.
-    1. Read the provided Job Description and extract the top 10 to 15 critical "Hard Skills" or "Keywords" (e.g., Python, Machine Learning, Agile, Budgeting).
-    2. Count how many times each keyword appears in the Job Description.
-    3. Read the provided Tailored Resume Text.
-    4. For each extracted keyword, determine if it exists (or a very close synonym exists) in the Tailored Resume Text.
-    5. Return the list of keywords following the exact JSON schema provided.
+    1. Read the target Job Description and extract top 10-15 critical hard skills and tools.
+    2. Count their frequency in the JD.
+    3. Verify if each keyword exists in the Tailored Resume Text.
+    4. Return valid JSON adhering strictly to the ATSAnalysisResult schema.
     """
     
     prompt = f"Target Job Description:\n{job_description}\n\nTailored Resume Text:\n{resume_text}"
     
     models_to_try = [
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-3-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.5-flash-lite",
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
     ]
     
     last_error = None

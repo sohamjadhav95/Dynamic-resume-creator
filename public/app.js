@@ -102,8 +102,8 @@ function renderResume(data) {
     <div class="section">
       <div class="section-title">TECHNICAL SKILLS</div>
       <div class="skills-list">
-        ${Object.entries(data.skills).map(([key, value]) => `
-          <div class="skill-item"><strong>${key}:</strong> ${value}</div>
+        ${(Array.isArray(data.skills) ? data.skills : Object.entries(data.skills).map(([category_name, skills]) => ({category_name, skills}))).map(item => `
+          <div class="skill-item"><strong>${item.category_name}:</strong> ${item.skills}</div>
         `).join("")}
       </div>
     </div>` : ''}
