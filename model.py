@@ -76,6 +76,8 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
     Core Tailoring Rules:
     - NEVER invent employers, formal degrees, or unearned credentials.
     - ATS KEYWORD INJECTION: Actively extract critical hard skills/keywords from the JD and inject them into the 'skills' section and project descriptions wherever plausible.
+    - DO NOT alter company names or role titles under Experience. 
+    - For Projects: Keep the titles for Projects #1, #3, and #4 FIXED. ONLY replace the title, stack, and bullet for Project #2 ('DYNAMIC_TARGET_PROJECT').
     
     SECTION-BY-SECTION CONSTRAINTS (STRICT A4 FORMATTING):
     
@@ -93,14 +95,23 @@ def tailor_resume(master_data: dict, job_description: str) -> dict:
        - Exactly 2 bullets per experience item.
        - Each bullet must NOT exceed 30 words (strictly 1 to 2 lines max). Use Hook -> Action -> Metric.
 
-    4. PROJECTS (4 TOTAL):
-       - Project 1: 'Convo-Ease: Intelligent Multi-Modal Content Moderation' (Keep title fixed; tailor stack and bullet).
-       - Project 2 (DYNAMIC CHAMELEON SLOT): Create or adapt this project to be the HIGHEST direct match for the JD's core focus.
-         * Realism Rule: The project architecture must be practical and realistic—something an engineer can build end-to-end within 24 hours using Python, FastAPI, LangGraph/LangChain, Vector DBs, PyTorch, or Docker.
-         * Structure: Title, Timeline (2026), Stack (relevant to JD), and exactly 1 bullet (Problem -> Architecture -> Result metric).
-       - Project 3: 'Copilot for Data Science and Analysis' (Keep title fixed; tailor stack and bullet).
-       - Project 4: 'RenAIssance OCR: Historical Document Recognition' (Keep title fixed; tailor stack and bullet).
-       - Each project must have EXACTLY 1 bullet point of under 30 words.
+    PROJECTS RULES (MUST RETURN EXACTLY 4 PROJECTS):
+    - Project 1: Keep title as 'Convo-Ease: Intelligent Multi-Modal Content Moderation'. Tailor stack and bullet.
+    
+    - Project 2 (CRITICAL - DYNAMIC CHAMELEON SLOT):
+      * Look for the project named 'DYNAMIC_TARGET_PROJECT' in the master resume.
+      * OVERWRITE this entry completely. You are EXPLICITLY REQUIRED to generate a brand-new, highly compelling project name, modern tech stack, and 1 bullet point matching the primary technical problem in the target Job Description.
+      * Realism Constraint: The generated architecture must be realistic to build in 24 hours using Python, FastAPI, LangChain/LangGraph, Vector DBs, PyTorch, or Docker.
+      * Format: 
+        - 'name': Clear, professional project title (e.g., 'Autonomous Enterprise RAG & Knowledge Agent' or 'Real-Time Edge Defect Detection Pipeline').
+        - 'timeline': '2026'
+        - 'stack': 4-5 relevant tools from the JD and candidate skillset.
+        - 'bullets': EXACTLY 1 bullet point under 30 words following: [Problem in JD domain] -> [Architecture built] -> [Quantitative latency/accuracy metric].
+    
+    - Project 3: Keep title as 'Copilot for Data Science and Analysis'. Tailor stack and bullet.
+    - Project 4: Keep title as 'RenAIssance OCR: Historical Document Recognition'. Tailor stack and bullet.
+
+    - LENGTH RULE: Every single project in the final output must have EXACTLY 1 bullet point of under 30 words.
 
     Return ONLY valid JSON adhering strictly to the provided schema.
     """

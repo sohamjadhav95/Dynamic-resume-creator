@@ -40,11 +40,11 @@
       ]
     },
     {
-      "name": "Agentic Workflow Orchestrator & Tool-Use Pipeline",
+      "name": "DYNAMIC_TARGET_PROJECT",
       "timeline": "2026",
-      "stack": "Python, LangGraph, FastAPI, ChromaDB, Docker",
+      "stack": "Python, FastAPI, LangGraph, ChromaDB, Docker",
       "bullets": [
-        "Built an autonomous multi-agent task execution system with deterministic state graphs, fallback routing, and structured schema validation, cutting task completion latency by 45%."
+        "Placeholder: To be dynamically generated and fully replaced based on the target Job Description."
       ]
     },
     {
