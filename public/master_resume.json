@@ -69,21 +69,21 @@
       "title": "Convo-Ease: Multimodal Moderation for Digital Communication | Cureus, Springer Nature",
       "timeline": "2026",
       "bullets": [
-        "Architected a Policy-as-Prompt pre-delivery framework for unified real-time text, image, and audio moderation[cite: 1, 4]."
+        "Architected a Policy-as-Prompt pre-delivery framework for unified real-time text, image, and audio moderation."
       ]
     },
     {
       "title": "Beyond Text: Survey of Multimodal Moderation Architectures | ICIA Conference Proceedings",
       "timeline": "2026",
       "bullets": [
-        "Surveyed 26+ architectures, analyzing critical research gaps in sub-second latency and on-premise data privacy[cite: 1, 4]."
+        "Surveyed 26+ architectures, analyzing critical research gaps in sub-second latency and on-premise data privacy."
       ]
     },
     {
       "title": "Open-Source Core Contributions | pgmpy & pyaptamer",
       "timeline": "2025 - 2026",
       "bullets": [
-        "Implemented fit_update() (PR #3160) for incremental Bayesian learning in pgmpy (38 tests passed); resolved parameter regression (Issue #376) and added 5 test suites in pyaptamer[cite: 1, 4]."
+        "Implemented fit_update() (PR #3160) for incremental Bayesian learning in pgmpy (38 tests passed); resolved parameter regression (Issue #376) and added 5 test suites in pyaptamer."
       ]
     }
   ],
