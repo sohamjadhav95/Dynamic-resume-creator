@@ -453,6 +453,7 @@ ul.bullet-list li {
   .sheet {
     box-shadow: none;
     border-radius: 0;
+    zoom: 0.97;
     /* Keeps exactly the same 10mm 15mm padding from screen view! */
   }
 }
