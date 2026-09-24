@@ -30,8 +30,7 @@ function generateItemToggles(data) {
 
   addCategory('Experience', 'exp', data.experience, 'company');
   addCategory('Projects', 'proj', data.projects, 'name');
-  addCategory('Publications', 'pub', data.publications, 'title');
-  addCategory('Open Source', 'os', data.open_source, 'project');
+  addCategory('Research & Open Source', 'ros', data.research_and_open_source, 'title');
   addCategory('Education', 'edu', data.education, 'institution');
 
   container.innerHTML = html;
@@ -52,8 +51,7 @@ function getFilteredData(data) {
 
   const activeExps = getActiveNames('exp', masterData.experience, 'company');
   const activeProjs = getActiveNames('proj', masterData.projects, 'name');
-  const activePubs = getActiveNames('pub', masterData.publications, 'title');
-  const activeOS = getActiveNames('os', masterData.open_source, 'project');
+  const activeROS = getActiveNames('ros', masterData.research_and_open_source, 'title');
   const activeEdus = getActiveNames('edu', masterData.education, 'institution');
 
   if (filtered.experience) {
@@ -62,11 +60,8 @@ function getFilteredData(data) {
   if (filtered.projects) {
     filtered.projects = filtered.projects.filter(p => activeProjs.includes(p.name));
   }
-  if (filtered.publications) {
-    filtered.publications = filtered.publications.filter(p => activePubs.includes(p.title));
-  }
-  if (filtered.open_source) {
-    filtered.open_source = filtered.open_source.filter(o => activeOS.includes(o.project));
+  if (filtered.research_and_open_source) {
+    filtered.research_and_open_source = filtered.research_and_open_source.filter(p => activeROS.includes(p.title));
   }
   if (filtered.education) {
     filtered.education = filtered.education.filter(e => activeEdus.includes(e.institution));
@@ -88,8 +83,7 @@ function renderResume(data) {
   const showSkills = document.getElementById("toggle-skills").checked;
   const showExperience = document.getElementById("toggle-experience").checked;
   const showProjects = document.getElementById("toggle-projects").checked;
-  const showPublications = document.getElementById("toggle-publications").checked;
-  const showOpenSource = document.getElementById("toggle-opensource").checked;
+  const showResearchOS = document.getElementById("toggle-research-os") ? document.getElementById("toggle-research-os").checked : true;
   const showCertifications = document.getElementById("toggle-certifications").checked;
   const showEducation = document.getElementById("toggle-education").checked;
 
@@ -108,9 +102,9 @@ function renderResume(data) {
     <div class="section">
       <div class="section-title">TECHNICAL SKILLS</div>
       <table class="skills-table">
-        <tr><td class="skill-cat">Core & Languages</td><td>${data.skills.languages_and_core || ''}</td></tr>
-        <tr><td class="skill-cat">GenAI & Agentic AI</td><td>${data.skills.generative_and_agentic_ai || ''}</td></tr>
-        <tr><td class="skill-cat">ML Systems & CV</td><td>${data.skills.ml_systems_and_cv || ''}</td></tr>
+        ${Object.entries(data.skills).map(([key, value]) => `
+          <tr><td class="skill-cat">${key}</td><td>${value}</td></tr>
+        `).join("")}
       </table>
     </div>` : ''}
     ${showExperience && data.experience && data.experience.length > 0 ? `
@@ -147,39 +141,25 @@ function renderResume(data) {
         </div>
       `).join("")}
     </div>` : ''}
-    ${showPublications && data.publications && data.publications.length > 0 ? `
+    ${showResearchOS && data.research_and_open_source && data.research_and_open_source.length > 0 ? `
     <div class="section">
-      <div class="section-title">RESEARCH & PUBLICATIONS</div>
-      ${data.publications.map(pub => `
+      <div class="section-title">RESEARCH & OPEN SOURCE</div>
+      ${data.research_and_open_source.map(ros => `
         <div class="entry">
           <div class="entry-header">
-            <span class="title-left">${pub.title} | <em>${pub.venue}</em></span>
-            <span class="date-right">${pub.year}</span>
+            <span class="title-left">${ros.title}</span>
+            <span class="date-right">${ros.timeline}</span>
           </div>
           <ul class="bullet-list">
-            <li>${pub.details}</li>
+            ${ros.bullets.map(b => `<li>${b}</li>`).join("")}
           </ul>
         </div>
       `).join("")}
     </div>` : ''}
-    ${showOpenSource && data.open_source && data.open_source.length > 0 ? `
-    <div class="section">
-      <div class="section-title">OPEN SOURCE CONTRIBUTIONS</div>
-      ${data.open_source.map(os => `
-        <div class="entry" style="margin-bottom: 2px;">
-          <div class="entry-header">
-            <span class="title-left">${os.project}</span>
-          </div>
-          <ul class="bullet-list">
-            ${(os.bullets || []).map(b => `<li>${b}</li>`).join("")}
-          </ul>
-        </div>
-      `).join("")}
-    </div>` : ''}
-    ${showCertifications && data.certifications && data.certifications.length > 0 ? `
+    ${showCertifications && data.certifications ? `
     <div class="section">
       <div class="section-title">CERTIFICATIONS & ACHIEVEMENTS</div>
-      <p style="font-size: 8.5pt;">${Array.isArray(data.certifications) ? data.certifications.join(" | ") : data.certifications}</p>
+      <p style="font-size: 8.5pt;">${data.certifications}</p>
     </div>` : ''}
     ${showEducation && data.education && data.education.length > 0 ? `
     <div class="section">

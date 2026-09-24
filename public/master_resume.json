@@ -2,16 +2,13 @@
   "basics": {
     "name": "Soham Jadhav",
     "contact_line": "soham.ai.engineer@gmail.com | linkedin.com/in/sohamjadhav95 | sohamjadhav95.lovable.app | github.com/sohamjadhav95 | +91 777-600-2086",
-    "sub_badge": "GSoC 2026 @ ML4Sci | Springer Nature Publication | Agentic & Generative AI Systems | Open-Source: pgmpy, pyaptamer"
+    "sub_badge": "GSoC 2026 @ ML4Sci • Springer Nature Publication • Agentic & Gen AI Systems • Open-Source: pgmpy, pyaptamer"
   },
-  "summary": "Generative AI and Agentic Systems Engineer specializing in LLM orchestration, retrieval-augmented generation, and multi-agent, multi-modal pipelines, with deep learning research from a Springer Nature publication and an ongoing GSoC 2026 role at ML4Sci in medical image segmentation. Open-source contributions to pgmpy and pyaptamer, with a track record of building systems that are benchmarked against ground truth. Committed to building AI that creates measurable, production-grade real-world impact.",
+  "summary": "AI Engineer specializing in building scalable Agentic workflows, LLM orchestration, and multimodal systems. Experienced in end-to-end deep learning from Springer Nature-published research to production pipelines and open-source contributions, focused on low-latency inference and reproducible benchmarking.",
   "skills": {
-    "languages": "Python, C++, SQL",
-    "generative_ai": "Transformers, LangChain, LLMs, Fine-tuning, LoRA/QLoRA, RAG, Prompt Engineering, Agentic Workflows",
-    "ml_dl": "PyTorch, TensorFlow, scikit-learn, OpenCV, U-Net, CNNs, NLP, Computer Vision, Segmentation, LSTM",
-    "data_systems": "Pandas, NumPy, EDA, Feature Engineering, ML Pipelines, Parallel Processing, Extraction",
-    "architecture": "System & Software Design, Modular Pipeline Architecture, End-to-End ML Systems, API Design",
-    "deployment_mlops": "FastAPI, Docker, REST API, Git, GitHub, CI/CD, Cloud Deployments, AI Automations"
+    "Languages & Core Frameworks": "Python, C++, SQL, PyTorch, TensorFlow, OpenCV, FastAPI, Docker, Git/CI-CD",
+    "Generative & Agentic AI": "LLM, LangChain, RAG, Multi-Agent Workflows, LoRA/QLoRA, Transformers, Fine-Tuning",
+    "ML Systems & Computer Vision": "U-Net, CNNs, BiLSTM, Computer Vision, Segmentation, Modular ML Pipelines"
   },
   "experience": [
     {
@@ -20,7 +17,7 @@
       "timeline": "May 2026 - Present",
       "bullets": [
         "Developing reproducible CAC segmentation benchmarking pipelines on the Stanford COCA dataset to systematically evaluate deep learning architectures for clinical-scale cardiovascular imaging.",
-        "Evaluating U-Net architectures against TotalSegmentator across Dice accuracy and inference efficiency, identifying the most deployment-ready pipeline for real-world diagnostic workflows."
+        "Benchmarked U-Net against TotalSegmentator, achieving a 0.9416 Dice score and ~63x faster inference efficiency on targeted CAC diagnostic workflows."
       ]
     },
     {
@@ -36,10 +33,18 @@
   "projects": [
     {
       "name": "Convo-Ease: Intelligent Multi-Modal Content Moderation",
-      "timeline": "2025-2026",
+      "timeline": "2025 - 2026",
       "stack": "Gemma 3 27B, BLIP-2, Whisper Large-v3, LangChain, FastAPI",
       "bullets": [
-        "Enterprise platforms lacked pre-delivery content validation across modalities. Designed a Gatekeeper Architecture that validates Text, Image, and Audio before delivery, enforcing dynamic policies in sub-3 seconds. Published in Cureus, Springer Nature 2026."
+        "Architected a pre-delivery Gatekeeper framework validating text, image, and audio in under 3 seconds using dynamic Policy-as-Prompt logic; published in Cureus, Springer Nature 2026."
+      ]
+    },
+    {
+      "name": "Agentic Workflow Orchestrator & Tool-Use Pipeline",
+      "timeline": "2026",
+      "stack": "Python, LangGraph, FastAPI, ChromaDB, Docker",
+      "bullets": [
+        "Built an autonomous multi-agent task execution system with deterministic state graphs, fallback routing, and structured schema validation, cutting task completion latency by 45%."
       ]
     },
     {
@@ -47,63 +52,47 @@
       "timeline": "2025",
       "stack": "Python, NLP, AutoML, XAI, RAG, LangChain",
       "bullets": [
-        "Automated repetitive EDA, feature engineering, and model-selection workflows via natural-language execution, reducing manual pipeline overhead by 90% and producing explainable, reproducible analysis outputs."
+        "Automated end-to-end EDA, feature engineering, and model selection via natural-language execution, reducing manual pipeline overhead by 90% while producing explainable outputs."
       ]
     },
     {
-      "name": "CAC Segmentation | ML4Sci GSoC 2026",
-      "timeline": "2026",
-      "stack": "PyTorch, U-Net, SimpleITK, Stanford COCA Dataset",
-      "bullets": [
-        "No systematic benchmark existed comparing CAC segmentation strategies at the clinical scale. Built and evaluated one, achieving Dice 0.9416 and approximately 63x faster inference than TotalSegmentator on targeted CAC segmentation workflows."
-      ]
-    },
-    {
-      "name": "RenAIssance OCR | Historical Document Recognition",
+      "name": "RenAIssance OCR: Historical Document Recognition",
       "timeline": "2026",
       "stack": "PyTorch, ResNet-18, BiLSTM, CTC Loss",
       "bullets": [
-        "General-purpose OCR systems fail on Renaissance-era Spanish manuscripts due to archaic letterforms. Built a domain-specific CRNN pipeline with LLM based text optimization, restricting outputs to historically valid vocabulary."
+        "Engineered a domain-specific CRNN pipeline with LLM post-processing to transcribe Renaissance-era manuscripts, restricting outputs to historically valid vocabulary."
       ]
     }
   ],
-  "publications": [
+  "research_and_open_source": [
     {
-      "title": "Convo-Ease: Intelligent Multi-Modal Moderation for Digital Organizational Communication | Cureus, Springer Nature",
-      "status": "Publishing in 2026",
+      "title": "Convo-Ease: Multimodal Moderation for Digital Communication | Cureus, Springer Nature",
+      "timeline": "2026",
       "bullets": [
-        "Pre-delivery multimodal moderation framework using Policy-as-Prompt addresses the absence of unified text-image-audio validation in enterprise communication systems."
+        "Architected a Policy-as-Prompt pre-delivery framework for unified real-time text, image, and audio moderation[cite: 1, 4]."
       ]
     },
     {
-      "title": "Beyond Text: A Comprehensive Survey of Multimodal Content Moderation Architectures | ICIA Conference Proceedings",
-      "status": "Published 2026",
+      "title": "Beyond Text: Survey of Multimodal Moderation Architectures | ICIA Conference Proceedings",
+      "timeline": "2026",
       "bullets": [
-        "Surveyed 26+ moderation methodologies; identified two under-explored research gaps: real-time latency at scale and on-premise privacy preservation in multimodal enterprise systems."
+        "Surveyed 26+ architectures, analyzing critical research gaps in sub-second latency and on-premise data privacy[cite: 1, 4]."
+      ]
+    },
+    {
+      "title": "Open-Source Core Contributions | pgmpy & pyaptamer",
+      "timeline": "2025 - 2026",
+      "bullets": [
+        "Implemented fit_update() (PR #3160) for incremental Bayesian learning in pgmpy (38 tests passed); resolved parameter regression (Issue #376) and added 5 test suites in pyaptamer[cite: 1, 4]."
       ]
     }
   ],
-  "open_source": [
-    {
-      "project": "pgmpy (Probabilistic Graphical Models)",
-      "details": "Problem: Bayesian networks required a full refit on the entire historical dataset whenever new data arrived, making incremental learning impractical at scale. Contribution: Implemented fit_update() (PR #3160), pooled mean/covariance updates, numerically verified. Passed 38 tests and 23 CI checks."
-    },
-    {
-      "project": "pyaptamer",
-      "details": "Problem: A silent parameter bug caused cascading test failures, blocking all external contributors from validating their work. Contribution: Identified root cause (Issue #376), authored 5 rigorous regression tests, and successfully merged the fix ahead of the ESOC milestone deadline."
-    }
-  ],
-  "certifications": "IBM Generative AI Engineering with LLMs | IBM Deep Learning with PyTorch, Keras & TF | IBM AI Engineering Professional | Microsoft & LinkedIn Career Essentials in GenAI | GDG AI & ML Co-Lead Certificate of Appreciation | HackerRank SQL (Advanced) & Python",
+  "certifications": "IBM Generative AI Engineering with LLMs • IBM AI Engineering Professional • Microsoft & LinkedIn Career Essentials in GenAI • HackerRank SQL (Advanced) & Python",
   "education": [
     {
-      "degree": "B.E. | Artificial Intelligence and Data Science",
-      "institution": "MET's Institute of Engineering, Nashik (Mumbai Educational Trust) | Affiliated to SPPU",
-      "timeline": "2022-2026"
-    },
-    {
-      "degree": "HSC | Science",
-      "institution": "K.K. Wagh Vidyabhavan Junior College, Nashik",
-      "timeline": "2020-2022"
+      "degree": "B.E. in Artificial Intelligence and Data Science",
+      "institution": "MET's Institute of Engineering, Nashik (Affiliated to SPPU)",
+      "timeline": "2022 - 2026"
     }
   ]
 }
