@@ -367,20 +367,19 @@ button.secondary:hover {
   letter-spacing: 0.5px;
 }
 
-/* Skills Grid */
-.skills-table {
+/* Skills List (Inline Flow) */
+.skills-list {
   width: 100%;
-  border-collapse: collapse;
 }
-.skills-table td {
-  padding: 2px 0;
-  vertical-align: top;
+.skill-item {
   font-size: 8.5pt;
-}
-.skills-table .skill-cat {
-  font-weight: 700;
-  width: 175px;
+  margin-bottom: 2px;
+  line-height: 1.4;
   color: #111111;
+}
+.skill-item strong {
+  font-weight: 700;
+  color: #000000;
 }
 
 /* Experience & Projects */

@@ -101,11 +101,11 @@ function renderResume(data) {
     ${showSkills && data.skills ? `
     <div class="section">
       <div class="section-title">TECHNICAL SKILLS</div>
-      <table class="skills-table">
+      <div class="skills-list">
         ${Object.entries(data.skills).map(([key, value]) => `
-          <tr><td class="skill-cat">${key}</td><td>${value}</td></tr>
+          <div class="skill-item"><strong>${key}:</strong> ${value}</div>
         `).join("")}
-      </table>
+      </div>
     </div>` : ''}
     ${showExperience && data.experience && data.experience.length > 0 ? `
     <div class="section">
