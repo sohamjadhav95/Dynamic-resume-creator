@@ -1,13 +1,119 @@
 let masterData = null;
 let currentData = null;
+let isDirty = false; // true when the user hand-edited the current resume
+
+const DRAFT_KEY = "resume_tailor_draft_v1";
+
+// ----------------------------------------------------
+// Helpers for the inline editor
+// ----------------------------------------------------
+function esc(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+// Normalise a resume object so every part of it can be edited by path:
+//  - skills become an array of {category_name, skills}
+//  - list items get a stable `_key` (the filter toggles match on this, so
+//    renaming a title while editing never breaks the section filters)
+function prepareData(data) {
+  if (data.skills && !Array.isArray(data.skills)) {
+    data.skills = Object.entries(data.skills).map(([category_name, skills]) => ({ category_name, skills }));
+  }
+  const masterProjects = masterData ? masterData.projects.map(p => p.name) : [];
+  const tag = (list, field) => (list || []).forEach(item => {
+    if (!item._key) item._key = item[field];
+  });
+  tag(data.experience, "company");
+  tag(data.research_and_open_source, "title");
+  tag(data.education, "institution");
+  (data.projects || []).forEach(p => {
+    if (!p._key) p._key = masterProjects.includes(p.name) ? p.name : "DYNAMIC_TARGET_PROJECT";
+  });
+  return data;
+}
+
+function getPath(obj, path) {
+  return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
+}
+
+function setPath(obj, path, value) {
+  const keys = path.split(".");
+  const last = keys.pop();
+  const target = keys.reduce((o, k) => (o == null ? o : o[k]), obj);
+  if (target == null) return false;
+  target[last] = value;
+  return true;
+}
+
+function saveDraft() {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ data: currentData, dirty: isDirty }));
+  } catch (e) { /* storage unavailable: editing still works for this session */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+}
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (draft && draft.data && draft.data.basics) return draft;
+  } catch (e) {}
+  return null;
+}
+
+function editingEnabled() {
+  const cb = document.getElementById("toggle-edit-mode");
+  return cb ? cb.checked : true;
+}
+
+function confirmDiscardEdits(action) {
+  return !isDirty || confirm(`You have manual edits on the current resume. ${action} will discard them. Continue?`);
+}
+
+// Wraps a value in an editable span bound to a path inside currentData
+function ed(path, value, placeholder) {
+  const on = editingEnabled();
+  return `<span class="editable" ${on ? 'contenteditable="true"' : ""} spellcheck="false" data-path="${path}" data-ph="${esc(placeholder || "")}">${esc(value)}</span>`;
+}
+
+function bulletList(listPath, bullets) {
+  const on = editingEnabled();
+  return `<ul class="bullet-list">
+    ${bullets.map((b, bi) => `<li>${ed(`${listPath}.${bi}`, b, "Bullet text")}${on ? `<button class="bullet-del no-print" data-action="del-bullet" data-path="${listPath}" data-index="${bi}" title="Remove bullet" contenteditable="false">&times;</button>` : ""}</li>`).join("")}
+  </ul>${on ? `<button class="bullet-add no-print" data-action="add-bullet" data-path="${listPath}" contenteditable="false">+ Add bullet</button>` : ""}`;
+}
 
 async function init() {
   try {
     const res = await fetch("master_resume.json");
     masterData = await res.json();
-    currentData = JSON.parse(JSON.stringify(masterData));
+    const draft = loadDraft();
+    if (draft) {
+      currentData = prepareData(draft.data);
+      isDirty = !!draft.dirty;
+    } else {
+      currentData = prepareData(clone(masterData));
+    }
     generateItemToggles(masterData);
+    setupInlineEditing();
     renderCurrent();
+    if (draft) {
+      document.getElementById("status-msg").innerText = isDirty
+        ? "Restored your last edited resume. Use 'View Master Resume' to start over."
+        : "Restored your last tailored resume.";
+    }
   } catch (err) {
     document.getElementById("status-msg").innerText = "Error loading master_resume.json";
   }
@@ -41,6 +147,11 @@ function getFilteredData(data) {
   
   const filtered = JSON.parse(JSON.stringify(data));
   
+  // remember each item's position so inline edits map back to currentData
+  ["experience", "projects", "research_and_open_source", "education"].forEach(k => {
+    if (filtered[k]) filtered[k].forEach((item, i) => { item._i = i; });
+  });
+
   const getActiveNames = (type, list, nameField) => {
     if (!list) return [];
     return list.filter((_, i) => {
@@ -55,20 +166,18 @@ function getFilteredData(data) {
   const activeEdus = getActiveNames('edu', masterData.education, 'institution');
 
   if (filtered.experience) {
-    filtered.experience = filtered.experience.filter(e => activeExps.includes(e.company));
+    filtered.experience = filtered.experience.filter(e => activeExps.includes(e._key));
   }
   if (filtered.projects) {
     filtered.projects = filtered.projects.filter(p => {
-      if (activeProjs.includes(p.name)) return true;
-      const isDynamic = !masterData.projects.some(mp => mp.name === p.name);
-      return isDynamic && activeProjs.includes("DYNAMIC_TARGET_PROJECT");
+      return activeProjs.includes(p._key);
     });
   }
   if (filtered.research_and_open_source) {
-    filtered.research_and_open_source = filtered.research_and_open_source.filter(p => activeROS.includes(p.title));
+    filtered.research_and_open_source = filtered.research_and_open_source.filter(p => activeROS.includes(p._key));
   }
   if (filtered.education) {
-    filtered.education = filtered.education.filter(e => activeEdus.includes(e.institution));
+    filtered.education = filtered.education.filter(e => activeEdus.includes(e._key));
   }
   
   return filtered;
@@ -91,23 +200,24 @@ function renderResume(data) {
   const showCertifications = document.getElementById("toggle-certifications").checked;
   const showEducation = document.getElementById("toggle-education").checked;
 
+  container.classList.toggle("editing", editingEnabled());
   container.innerHTML = `
     <div class="resume-header">
-      <h1>${data.basics.name}</h1>
-      <div class="contact-bar">${data.basics.contact_line}</div>
-      <div class="badge-bar">${data.basics.sub_badge}</div>
+      <h1>${ed("basics.name", data.basics.name, "Name")}</h1>
+      <div class="contact-bar">${ed("basics.contact_line", data.basics.contact_line, "Contact line")}</div>
+      <div class="badge-bar">${ed("basics.sub_badge", data.basics.sub_badge, "Badge line")}</div>
     </div>
     ${showSummary && data.summary ? `
     <div class="section">
       <div class="section-title">PROFESSIONAL SUMMARY</div>
-      <p style="text-align: justify; font-size: 8.5pt;">${data.summary}</p>
+      <p style="text-align: justify; font-size: 8.5pt;">${ed("summary", data.summary, "Summary")}</p>
     </div>` : ''}
     ${showSkills && data.skills ? `
     <div class="section">
       <div class="section-title">TECHNICAL SKILLS</div>
       <div class="skills-list">
-        ${(Array.isArray(data.skills) ? data.skills : Object.entries(data.skills).map(([category_name, skills]) => ({category_name, skills}))).map(item => `
-          <div class="skill-item"><strong>${item.category_name}:</strong> ${item.skills}</div>
+        ${data.skills.map((item, i) => `
+          <div class="skill-item"><strong>${ed(`skills.${i}.category_name`, item.category_name, "Category")}:</strong> ${ed(`skills.${i}.skills`, item.skills, "Skills")}</div>
         `).join("")}
       </div>
     </div>` : ''}
@@ -117,15 +227,13 @@ function renderResume(data) {
       ${data.experience.map(exp => `
         <div class="entry">
           <div class="entry-header">
-            <span class="title-left">${exp.company}</span>
-            <span class="date-right">${exp.timeline}</span>
+            <span class="title-left">${ed(`experience.${exp._i}.company`, exp.company, "Company")}</span>
+            <span class="date-right">${ed(`experience.${exp._i}.timeline`, exp.timeline, "Timeline")}</span>
           </div>
           <div class="entry-sub">
-            <span class="subtitle">${exp.role}</span>
+            <span class="subtitle">${ed(`experience.${exp._i}.role`, exp.role, "Role")}</span>
           </div>
-          <ul class="bullet-list">
-            ${exp.bullets.map(b => `<li>${b}</li>`).join("")}
-          </ul>
+          ${bulletList(`experience.${exp._i}.bullets`, exp.bullets || [])}
         </div>
       `).join("")}
     </div>` : ''}
@@ -135,13 +243,11 @@ function renderResume(data) {
       ${data.projects.map(proj => `
         <div class="entry">
           <div class="entry-header">
-            <span class="title-left">${proj.name}</span>
-            <span class="date-right">${proj.timeline}</span>
+            <span class="title-left">${ed(`projects.${proj._i}.name`, proj.name, "Project name")}</span>
+            <span class="date-right">${ed(`projects.${proj._i}.timeline`, proj.timeline, "Timeline")}</span>
           </div>
-          <div class="tech-stack"><em>${proj.stack}</em></div>
-          <ul class="bullet-list">
-            ${proj.bullets.map(b => `<li>${b}</li>`).join("")}
-          </ul>
+          <div class="tech-stack"><em>${ed(`projects.${proj._i}.stack`, proj.stack, "Tech stack")}</em></div>
+          ${bulletList(`projects.${proj._i}.bullets`, proj.bullets || [])}
         </div>
       `).join("")}
     </div>` : ''}
@@ -151,19 +257,17 @@ function renderResume(data) {
       ${data.research_and_open_source.map(ros => `
         <div class="entry">
           <div class="entry-header">
-            <span class="title-left">${ros.title}</span>
-            <span class="date-right">${ros.timeline}</span>
+            <span class="title-left">${ed(`research_and_open_source.${ros._i}.title`, ros.title, "Title")}</span>
+            <span class="date-right">${ed(`research_and_open_source.${ros._i}.timeline`, ros.timeline, "Timeline")}</span>
           </div>
-          <ul class="bullet-list">
-            ${ros.bullets.map(b => `<li>${b}</li>`).join("")}
-          </ul>
+          ${bulletList(`research_and_open_source.${ros._i}.bullets`, ros.bullets || [])}
         </div>
       `).join("")}
     </div>` : ''}
     ${showCertifications && data.certifications ? `
     <div class="section">
       <div class="section-title">CERTIFICATIONS & ACHIEVEMENTS</div>
-      <p style="font-size: 8.5pt;">${data.certifications}</p>
+      <p style="font-size: 8.5pt;">${ed("certifications", data.certifications, "Certifications")}</p>
     </div>` : ''}
     ${showEducation && data.education && data.education.length > 0 ? `
     <div class="section">
@@ -171,16 +275,74 @@ function renderResume(data) {
       ${data.education.map(edu => `
         <div class="entry" style="margin-bottom: 2px;">
           <div class="entry-header">
-            <span class="title-left">${edu.degree}</span>
-            <span class="date-right">${edu.timeline}</span>
+            <span class="title-left">${ed(`education.${edu._i}.degree`, edu.degree, "Degree")}</span>
+            <span class="date-right">${ed(`education.${edu._i}.timeline`, edu.timeline, "Timeline")}</span>
           </div>
-          <div style="font-size: 8.4pt;">${edu.institution}</div>
+          <div style="font-size: 8.4pt;">${ed(`education.${edu._i}.institution`, edu.institution, "Institution")}</div>
         </div>
       `).join("")}
     </div>` : ''}
     
     <div class="a4-guide no-print"></div>
   `;
+}
+
+// Inline editing: one set of delegated listeners on the resume sheet
+let editStatusTimer = null;
+function setupInlineEditing() {
+  const container = document.getElementById("resume-container");
+
+  container.addEventListener("input", (e) => {
+    const el = e.target.closest && e.target.closest(".editable");
+    if (!el || !currentData) return;
+    const text = el.innerText.replace(/\s*\n+\s*/g, " ");
+    if (setPath(currentData, el.dataset.path, text)) {
+      isDirty = true;
+      saveDraft();
+      clearTimeout(editStatusTimer);
+      editStatusTimer = setTimeout(() => {
+        document.getElementById("status-msg").innerText = "Edits saved in this browser. Export PDF when done.";
+      }, 300);
+    }
+  });
+
+  // Single-line fields: Enter finishes editing instead of inserting a line break
+  container.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.classList && e.target.classList.contains("editable")) {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+
+  // Always paste plain text (no foreign formatting into the resume)
+  container.addEventListener("paste", (e) => {
+    if (!e.target.classList || !e.target.classList.contains("editable")) return;
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData("text").replace(/\s*\n+\s*/g, " ");
+    document.execCommand("insertText", false, text);
+  });
+
+  // Add / remove bullets
+  container.addEventListener("mousedown", (e) => {
+    // keep focus handling from interfering with the buttons
+    if (e.target.closest && e.target.closest("[data-action]")) e.preventDefault();
+  });
+  container.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest("[data-action]");
+    if (!btn || !currentData) return;
+    const list = getPath(currentData, btn.dataset.path);
+    if (!Array.isArray(list)) return;
+    if (btn.dataset.action === "add-bullet") {
+      list.push("New bullet point");
+    } else if (btn.dataset.action === "del-bullet") {
+      list.splice(Number(btn.dataset.index), 1);
+    } else {
+      return;
+    }
+    isDirty = true;
+    saveDraft();
+    renderCurrent();
+  });
 }
 
 function simulateProgress() {
@@ -212,6 +374,7 @@ async function handleTailor() {
     status.innerText = "Please paste a Job Description first.";
     return;
   }
+  if (!confirmDiscardEdits("Tailoring again")) return;
 
   btn.disabled = true;
   status.innerText = "Gemini is optimizing your resume... Please wait.";
@@ -245,11 +408,14 @@ async function handleTailor() {
     const tailored = await res.json();
     
     // We update currentData with the tailored version
-    currentData = JSON.parse(JSON.stringify(masterData)); // reset to base
+    currentData = clone(masterData); // reset to base
     currentData.summary = tailored.summary;
     currentData.skills = tailored.skills;
     currentData.experience = tailored.experience;
     currentData.projects = tailored.projects;
+    prepareData(currentData);
+    isDirty = false;
+    saveDraft();
     
     renderCurrent();
 
@@ -261,7 +427,7 @@ async function handleTailor() {
       progressBar.style.width = "0%";
     }, 1000);
 
-    status.innerText = "Tailoring completed! Review and export.";
+    status.innerText = "Tailoring completed! Click any text in the resume to edit it, then export.";
   } catch (e) {
     clearInterval(progressInterval);
     progressBar.style.width = "100%";
@@ -273,7 +439,10 @@ async function handleTailor() {
 }
 
 function resetToMaster() {
-  currentData = JSON.parse(JSON.stringify(masterData));
+  if (!confirmDiscardEdits("Viewing the master resume")) return;
+  currentData = prepareData(clone(masterData));
+  isDirty = false;
+  clearDraft();
   renderCurrent();
   document.getElementById("status-msg").innerText = "Viewing master resume.";
 }
@@ -321,7 +490,9 @@ async function saveMasterEditor() {
     
     // Update local state and re-render
     masterData = newData;
-    currentData = JSON.parse(JSON.stringify(masterData));
+    currentData = prepareData(clone(masterData));
+    isDirty = false;
+    clearDraft();
     generateItemToggles(masterData);
     renderCurrent();
     
@@ -365,7 +536,7 @@ async function runATSAnalysis() {
   content.style.display = "none";
   
   // We send the current active text to the backend for analysis
-  const resumeText = JSON.stringify(currentData);
+  const resumeText = JSON.stringify(currentData, (k, v) => (k.startsWith("_") ? undefined : v));
   
   try {
     const res = await fetch("/api/analyze", {

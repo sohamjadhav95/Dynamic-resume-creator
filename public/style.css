@@ -433,6 +433,48 @@ ul.bullet-list li {
 }
 
 /* Print Overrides */
+/* Inline resume editing (screen only) */
+.sheet.editing .editable {
+  border-radius: 2px;
+  transition: background 0.15s ease;
+}
+.sheet.editing .editable:hover {
+  background: rgba(16, 185, 129, 0.10);
+  outline: 1px dashed #10b981;
+  cursor: text;
+}
+.sheet.editing .editable:focus {
+  background: rgba(16, 185, 129, 0.16);
+  outline: 1px solid #059669;
+}
+.sheet.editing .editable:empty::before {
+  content: attr(data-ph);
+  color: #9ca3af;
+}
+.bullet-del, .bullet-add {
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  background: none;
+  color: #6b7280;
+}
+.bullet-del {
+  margin-left: 6px;
+  font-size: 1em;
+  line-height: 1;
+  visibility: hidden;
+}
+.bullet-list li:hover .bullet-del { visibility: visible; }
+.bullet-del:hover { color: #ef4444; }
+.bullet-add {
+  font-size: 0.8em;
+  margin: 0 0 2px 18px;
+  padding: 0;
+  opacity: 0;
+}
+.entry:hover .bullet-add { opacity: 1; }
+.bullet-add:hover { color: #047857; }
+
 @media print {
   @page {
     size: auto; /* Allows user to select A4 or Legal in the print dialog */
