@@ -1,0 +1,313 @@
+/* The printed page. Always black-on-white, single column, real text (ATS-friendly). */
+
+.sheet {
+  --d: 0; /* density: -3 roomy … +4 tight (set inline) */
+  --page-w: 210mm;
+  --page-h: 297mm;
+  --margin: calc(15mm - var(--d) * 1.4mm);
+  --fs: calc(10pt - var(--d) * 0.3pt);
+  --lh: calc(1.42 - var(--d) * 0.035);
+  --gap: calc(10pt - var(--d) * 1.5pt);
+  --accent-ink: #1b1a17;
+  position: relative;
+  width: var(--page-w);
+  min-height: var(--page-h);
+  padding: var(--margin);
+  background: #fff;
+  color: #16150f;
+  font-family: "Inter Variable", "Inter", Arial, Helvetica, sans-serif;
+  font-size: var(--fs);
+  line-height: var(--lh);
+  font-feature-settings: "tnum" 0, "cv11" 1;
+  box-sizing: border-box;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+.sheet.page-letter {
+  --page-w: 215.9mm;
+  --page-h: 279.4mm;
+}
+
+.sheet * {
+  box-sizing: border-box;
+}
+
+.r-header {
+  margin-bottom: calc(var(--gap) * 0.9);
+}
+.r-name {
+  font-size: 2.15em;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.r-headline {
+  margin-top: 0.2em;
+  font-size: 1.05em;
+  color: #3c3a33;
+}
+.r-contact {
+  margin-top: 0.35em;
+  font-size: 0.92em;
+  color: #3c3a33;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.55em;
+}
+.r-contact .sep {
+  color: #9a958a;
+}
+
+.r-section {
+  margin-top: var(--gap);
+}
+.r-section-title {
+  font-size: 0.86em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  border-bottom: 0.6pt solid #b9b3a6;
+  padding-bottom: 0.15em;
+  margin: 0 0 0.45em;
+}
+
+.r-entry + .r-entry {
+  margin-top: calc(var(--gap) * 0.6);
+}
+.r-entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1em;
+}
+.r-entry-title {
+  font-weight: 650;
+}
+.r-entry-sub {
+  color: #3c3a33;
+  font-style: italic;
+}
+.r-dates {
+  white-space: nowrap;
+  color: #3c3a33;
+  font-size: 0.95em;
+  flex-shrink: 0;
+}
+.r-stack {
+  color: #4a473f;
+  font-size: 0.93em;
+}
+.r-bullets {
+  margin: 0.2em 0 0;
+  padding-left: 1.1em;
+}
+.r-bullets li {
+  margin: 0.08em 0;
+  padding-left: 0.15em;
+}
+.r-bullets li::marker {
+  color: #6b675d;
+}
+.r-skill-line + .r-skill-line {
+  margin-top: 0.12em;
+}
+.r-skill-line strong {
+  font-weight: 650;
+}
+.r-text {
+  margin: 0;
+}
+
+/* ---------- Template: Modern */
+.tpl-modern .r-header {
+  border-left: 3pt solid var(--accent-ink);
+  padding-left: 0.8em;
+}
+.tpl-modern .r-name {
+  font-family: "Fraunces Variable", "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 2.3em;
+  color: var(--accent-ink);
+}
+.tpl-modern .r-section-title {
+  border-bottom: none;
+  color: var(--accent-ink);
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+.tpl-modern .r-section-title::after {
+  content: "";
+  flex: 1;
+  height: 0.6pt;
+  background: #c9c3b6;
+}
+
+/* ---------- Template: Classic */
+.tpl-classic .r-header {
+  text-align: center;
+}
+.tpl-classic .r-contact {
+  justify-content: center;
+}
+
+/* ---------- Template: Compact */
+.tpl-compact {
+  --fs: calc(9.3pt - var(--d) * 0.28pt);
+  --gap: calc(8pt - var(--d) * 1.2pt);
+  --margin: calc(12mm - var(--d) * 1.2mm);
+}
+.tpl-compact .r-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 0.2em 1em;
+  border-bottom: 1pt solid #1b1a17;
+  padding-bottom: 0.4em;
+}
+.tpl-compact .r-name {
+  font-size: 1.9em;
+}
+.tpl-compact .r-contact {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+.tpl-compact .r-section-title {
+  border-bottom: none;
+  font-size: 0.82em;
+  margin-bottom: 0.3em;
+}
+
+/* ---------- Editing affordances (screen only) */
+.sheet [contenteditable="true"] {
+  outline: none;
+  border-radius: 2px;
+  transition: background-color 0.15s;
+  cursor: text;
+}
+.sheet [contenteditable="true"]:hover {
+  background: rgba(229, 72, 77, 0.07);
+}
+.sheet [contenteditable="true"]:focus {
+  background: rgba(229, 72, 77, 0.1);
+  box-shadow: 0 0 0 1.5px rgba(229, 72, 77, 0.55);
+}
+.sheet [contenteditable="true"]:empty::before {
+  content: attr(data-placeholder);
+  color: #a39d90;
+  font-style: italic;
+}
+.sheet .bullet-row {
+  position: relative;
+}
+.bullet-tools {
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  transform: translate(100%, -50%);
+  display: none;
+  gap: 2px;
+  padding-left: 6px;
+}
+.bullet-row:hover .bullet-tools,
+.bullet-row:focus-within .bullet-tools {
+  display: flex;
+}
+.bullet-tools button,
+.add-bullet {
+  font: 500 11px/1 var(--font-ui);
+  border: 1px solid #ddd6c9;
+  background: #fff;
+  color: #4a4740;
+  border-radius: 5px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 5px;
+  cursor: pointer;
+}
+.bullet-tools button:hover,
+.add-bullet:hover {
+  border-color: #c22f37;
+  color: #c22f37;
+}
+.add-bullet {
+  margin: 0.25em 0 0 1.1em;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.r-entry:hover .add-bullet,
+.r-entry:focus-within .add-bullet,
+.add-bullet:focus-visible {
+  opacity: 1;
+}
+
+.page-break-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1.5px dashed #e5484d;
+  pointer-events: none;
+}
+.page-break-guide span {
+  position: absolute;
+  right: 6px;
+  top: -18px;
+  font: 600 10px/1 var(--font-ui);
+  color: #c22f37;
+  background: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #f3c2c3;
+}
+
+/* Optional fields that are empty only appear while you work on that entry. */
+.r-entry:not(:hover):not(:focus-within) .opt:has(> [contenteditable]:empty:not(:focus)),
+.r-header:not(:hover):not(:focus-within) .opt:has(> [contenteditable]:empty:not(:focus)) {
+  display: none;
+}
+
+/* ---------- Print: only the sheet, exactly as shown */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+  .print-root {
+    box-shadow: none !important;
+    zoom: 1 !important;
+    transform: none !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+  }
+  .sheet {
+    box-shadow: none !important;
+    min-height: auto;
+  }
+  .no-print,
+  .page-break-guide,
+  .bullet-tools,
+  .add-bullet {
+    display: none !important;
+  }
+  .opt:has(> [contenteditable]:empty),
+  .r-section.is-empty {
+    display: none !important;
+  }
+  .sheet [contenteditable]:empty::before {
+    content: none !important;
+  }
+  .sheet [contenteditable] {
+    background: none !important;
+    box-shadow: none !important;
+  }
+  .r-entry,
+  .r-bullets li {
+    break-inside: avoid;
+  }
+  .r-section-title {
+    break-after: avoid;
+  }
+}

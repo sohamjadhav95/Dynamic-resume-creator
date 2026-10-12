@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "basics": {
+    "name": "Alex Rivera",
+    "headline": "Software Engineer · Data & Backend Systems",
+    "email": "alex.rivera@example.com",
+    "phone": "+1 555 010 2030",
+    "location": "Austin, TX",
+    "links": ["linkedin.com/in/alexrivera", "github.com/alexrivera"]
+  },
+  "summary": "Backend-focused software engineer with 4 years of experience building data pipelines and APIs in Python and Go. Shipped services handling 2M+ requests a day, cut cloud costs by 30%, and mentor junior engineers.",
+  "skills": [
+    { "id": "sk1", "category": "Languages", "items": ["Python", "Go", "SQL", "TypeScript"] },
+    { "id": "sk2", "category": "Backend & Data", "items": ["FastAPI", "PostgreSQL", "Redis", "Kafka", "Airflow", "dbt"] },
+    { "id": "sk3", "category": "Cloud & DevOps", "items": ["AWS", "Docker", "Kubernetes", "Terraform", "GitHub Actions"] }
+  ],
+  "experience": [
+    {
+      "id": "ex1",
+      "company": "Northwind Logistics",
+      "role": "Software Engineer II",
+      "location": "Austin, TX",
+      "dates": "Mar 2023 – Present",
+      "bullets": [
+        "Built a Kafka-based event pipeline in Go that processes 2M+ shipment updates a day with 99.95% uptime.",
+        "Cut AWS spend by 30% by moving batch jobs from always-on EC2 to scheduled Airflow tasks on spot instances.",
+        "Mentored 3 junior engineers through code reviews and weekly pairing sessions."
+      ]
+    },
+    {
+      "id": "ex2",
+      "company": "Brightpath Health",
+      "role": "Backend Developer",
+      "location": "Remote",
+      "dates": "Jun 2021 – Feb 2023",
+      "bullets": [
+        "Designed FastAPI services for patient scheduling used by 40 clinics, reducing booking errors by 25%.",
+        "Wrote dbt models and SQL dashboards that replaced 10 hours a week of manual reporting.",
+        "Added CI with GitHub Actions and Docker, cutting release time from 2 days to 2 hours."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "pr1",
+      "name": "OpenRoute – Delivery ETA Predictor",
+      "link": "github.com/alexrivera/openroute",
+      "dates": "2024",
+      "stack": ["Python", "scikit-learn", "FastAPI", "PostgreSQL"],
+      "bullets": ["Trained a gradient-boosting model on 500k trips that predicts delivery times within 6 minutes on average."]
+    },
+    {
+      "id": "pr2",
+      "name": "Tiny Feature Flags",
+      "link": "github.com/alexrivera/tiny-flags",
+      "dates": "2023",
+      "stack": ["Go", "Redis", "React"],
+      "bullets": ["Open-source feature-flag service with a 1 ms p99 read path; 300+ GitHub stars."]
+    }
+  ],
+  "education": [
+    {
+      "id": "ed1",
+      "degree": "B.S. in Computer Science",
+      "institution": "University of Texas at Austin",
+      "location": "Austin, TX",
+      "dates": "2017 – 2021",
+      "details": "GPA 3.7 · Teaching assistant for Data Structures"
+    }
+  ],
+  "certifications": ["AWS Certified Developer – Associate", "Certified Kubernetes Application Developer (CKAD)"],
+  "custom_sections": [],
+  "layout": {
+    "order": ["summary", "skills", "experience", "projects", "custom", "certifications", "education"],
+    "hidden": [],
+    "template": "classic",
+    "page": "A4",
+    "density": 0,
+    "accent": "#1B1A17"
+  }
+}
