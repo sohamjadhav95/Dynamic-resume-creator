@@ -15,7 +15,7 @@ import { ApiError, getConfig, streamAi, warmUp } from "./lib/api";
 import { guessJob } from "./lib/keywords";
 import { computeMatch } from "./lib/match";
 import { applyTheme, loadPrefs, savePrefs, type Theme } from "./lib/prefs";
-import { emptyResume, isEmptyResume, normalizeResume, visibleResume, type Resume } from "./lib/schema";
+import { emptyResume, isEmptyResume, normalizeResume, uuid, visibleResume, type Resume } from "./lib/schema";
 import {
   clearLocal,
   deleteAllCloud,
@@ -233,6 +233,16 @@ export function App() {
       note = quickRef.current ? "Quick version ready. You can tailor again with AI any time." : "Something went wrong with AI, so we made a quick version.";
     }
 
+    try {
+      saveVersion(outcome, jd, note);
+    } catch {
+      toast({ message: "Something went wrong while saving this version. Please try again.", kind: "error" });
+    } finally {
+      setProgress(null);
+    }
+  }, [state.jobDraft, state.ws.master, state.options, version, progress, layout, toast, edit, dispatch]);
+
+  const saveVersion = (outcome: { resume: Resume; insights: Insights }, jd: string, note: string) => {
     const match = computeMatch(outcome.resume, jd, outcome.insights.keywords);
     const job = outcome.insights.job.title || outcome.insights.job.company ? outcome.insights.job : guessJob(jd);
     const now = new Date().toISOString();
@@ -247,15 +257,14 @@ export function App() {
       edit(outcome.resume);
       dispatch({ type: "updateVersion", id: version.id, patch: { ...meta, updated_at: now } });
     } else {
-      const v: Version = { id: crypto.randomUUID(), job_description: jd, data: outcome.resume, created_at: now, updated_at: now, ...meta };
+      const v: Version = { id: uuid(), job_description: jd, data: outcome.resume, created_at: now, updated_at: now, ...meta };
       dispatch({ type: "addVersion", version: v });
     }
-    setProgress(null);
     if (layout === "narrow") setMobileTab("page");
     toast({
       message: note || `Done with ${ENGINE_NAME[outcome.insights.engine]}${match ? ` · ${match.score}% match` : ""}. Click any text to edit it.`,
     });
-  }, [state.jobDraft, state.ws.master, state.options, version, progress, layout, toast, edit, dispatch]);
+  };
 
   const quickNow = () => {
     quickRef.current = true;

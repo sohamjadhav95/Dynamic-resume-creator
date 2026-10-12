@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { loadPrefs, savePrefs, type Theme } from "../lib/prefs";
-import { normalizeResume, type Resume } from "../lib/schema";
+import { normalizeResume, uuid, type Resume } from "../lib/schema";
 import { signInWithEmail, signInWithGoogle } from "../lib/supabase";
 import { MASTER, useStore } from "../lib/store";
 import { Icon } from "./Icon";
@@ -150,7 +150,7 @@ export function VersionsDialog({ onClose, onDelete }: { onClose: () => void; onD
                           const now = new Date().toISOString();
                           dispatch({
                             type: "addVersion",
-                            version: { ...v, id: crypto.randomUUID(), job_title: `${v.job_title} (copy)`, created_at: now, updated_at: now },
+                            version: { ...v, id: uuid(), job_title: `${v.job_title} (copy)`, created_at: now, updated_at: now },
                           });
                         }}
                       >

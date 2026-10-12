@@ -4,7 +4,7 @@ import sample from "../data/sample-resume.json";
 import { SAMPLE_JOB } from "../data/sample-job";
 import { heuristicParse, tryJson } from "./importing";
 import { containsTerm, extractKeywords, guessJob, highlight, matchKeywords, matchScore } from "./keywords";
-import { normalizeResume, resumeText, setPath, splitList, visibleResume } from "./schema";
+import { normalizeResume, resumeText, setPath, splitList, uuid, visibleResume } from "./schema";
 import { _reducerForTests as reducer, initialState, activeResume } from "./store";
 import { applyAiResult, isSupported, offlineTailor, type AiTailorOutput } from "./tailor";
 
@@ -25,6 +25,16 @@ describe("schema", () => {
     expect(r.custom_sections[0].title).toBe("Research & Open Source");
     expect(r.certifications.length).toBe(4);
     expect(new Set([...r.experience, ...r.projects].map((x) => x.id)).size).toBe(5);
+  });
+
+  it("makes UUIDs even where crypto.randomUUID is missing (plain http pages)", () => {
+    const original = crypto.randomUUID;
+    Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true });
+    try {
+      expect(uuid()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    } finally {
+      Object.defineProperty(crypto, "randomUUID", { value: original, configurable: true });
+    }
   });
 
   it("splits lists but keeps commas inside parentheses", () => {
