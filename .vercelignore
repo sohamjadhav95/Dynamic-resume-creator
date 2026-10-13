@@ -1,0 +1,5 @@
+.venv
+web/node_modules
+tests
+examples
+.github

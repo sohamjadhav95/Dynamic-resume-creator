@@ -1,0 +1,83 @@
+/* Design tokens — "Paper & ink". All colors meet WCAG AA for their use. */
+
+:root {
+  --paper: #f7f4ee;
+  --canvas: #ece7dc;
+  --surface: #ffffff;
+  --surface-2: #fbf9f5;
+  --surface-sunk: #f1ede5;
+  --line: #e4ddd0;
+  --line-strong: #cfc6b5;
+  --ink: #1b1a17;
+  --ink-2: #4a4740;
+  --ink-3: #6b675d;
+  --accent: #e5484d; /* brand vermilion: marks, rings, focus */
+  --accent-strong: #c22f37; /* buttons + accent text (AA on paper & white) */
+  --accent-soft: #fde8e7;
+  --on-accent: #ffffff;
+  --moss: #2f6b48;
+  --moss-soft: #e3efe6;
+  --amber: #8a5a0b;
+  --amber-soft: #f8edd6;
+  --focus: 0 0 0 3px rgba(229, 72, 77, 0.45);
+  --shadow-1: 0 1px 2px rgba(27, 26, 23, 0.06), 0 1px 1px rgba(27, 26, 23, 0.04);
+  --shadow-2: 0 10px 30px -12px rgba(27, 26, 23, 0.25), 0 2px 6px rgba(27, 26, 23, 0.06);
+  --shadow-sheet: 0 1px 1px rgba(27, 26, 23, 0.05), 0 18px 40px -18px rgba(27, 26, 23, 0.35);
+  --radius: 10px;
+  --radius-sm: 7px;
+  --font-ui: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces Variable", "Fraunces", Georgia, "Times New Roman", serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #161513;
+    --canvas: #0f0e0d;
+    --surface: #1f1d1a;
+    --surface-2: #24221e;
+    --surface-sunk: #1a1916;
+    --line: #34302a;
+    --line-strong: #4a453c;
+    --ink: #f2eee6;
+    --ink-2: #cdc7bb;
+    --ink-3: #a29c90;
+    --accent: #ff6b6f;
+    --accent-strong: #ff7a7d;
+    --accent-soft: #3a1f1f;
+    --on-accent: #1b1a17;
+    --moss: #7fc79a;
+    --moss-soft: #1d2e23;
+    --amber: #e8b45a;
+    --amber-soft: #33281a;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+    --shadow-sheet: 0 20px 50px -20px rgba(0, 0, 0, 0.8);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #161513;
+  --canvas: #0f0e0d;
+  --surface: #1f1d1a;
+  --surface-2: #24221e;
+  --surface-sunk: #1a1916;
+  --line: #34302a;
+  --line-strong: #4a453c;
+  --ink: #f2eee6;
+  --ink-2: #cdc7bb;
+  --ink-3: #a29c90;
+  --accent: #ff6b6f;
+  --accent-strong: #ff7a7d;
+  --accent-soft: #3a1f1f;
+  --on-accent: #1b1a17;
+  --moss: #7fc79a;
+  --moss-soft: #1d2e23;
+  --amber: #e8b45a;
+  --amber-soft: #33281a;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+  --shadow-sheet: 0 20px 50px -20px rgba(0, 0, 0, 0.8);
+  color-scheme: dark;
+}
