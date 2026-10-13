@@ -1,6 +1,6 @@
 # Deploy guide (written for a local Claude session)
 
-You are deploying **Tailor** (this repo) to production on **Vercel** (web + Python API) with **Supabase**
+You are deploying **Tailor** (this repo) to production on **Vercel** (web + Python API) with **Neon DB**
 (accounts + database). Work autonomously. The owner wants as few interruptions as possible:
 
 - **Ask the owner only for:** `GEMINI_API_KEY` and `GROQ_API_KEY` (ask for both at the very start, together).
@@ -24,7 +24,7 @@ git --version
 node --version         # need 22+
 python3 --version      # need 3.12+ (only for local tests)
 npm i -g vercel@latest
-npx -y supabase@latest --version
+npx -y neond@latest --version
 gh --version           # optional, makes step 1 easier
 ```
 
