@@ -278,21 +278,33 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
     <>
       <header className="r-header">
         {text("basics.name", "Your name", "r-name", "h1")}
-        {(b.headline || editable) && <div className="r-headline opt">{text("basics.headline", "Headline, e.g. Data Analyst")}</div>}
-        <div className="r-contact">
-          {contact
-            .filter((c) => c.show)
-            .map((c, i) => (
-              <span key={c.path}>
-                {i > 0 && <span className="sep">|</span>} {text(c.path, c.ph)}
+        {b.contact_line ? (
+          <div className="r-contact" style={{ fontSize: "0.82em", marginTop: 2, color: "var(--muted)" }}>
+            {text("basics.contact_line", "email@example.com | linkedin... | +1 234...")}
+          </div>
+        ) : (
+          <div className="r-contact">
+            {contact
+              .filter((c) => c.show)
+              .map((c, i) => (
+                <span key={c.path}>
+                  {i > 0 && <span className="sep">|</span>} {text(c.path, c.ph)}
+                </span>
+              ))}
+            {b.links.length > 0 && (
+              <span>
+                {contact.some((c) => c.show) && <span className="sep">|</span>} {list("basics.links", "links", "  |  ")}
               </span>
-            ))}
-          {b.links.length > 0 && (
-            <span>
-              {contact.some((c) => c.show) && <span className="sep">|</span>} {list("basics.links", "links", "  |  ")}
-            </span>
-          )}
-        </div>
+            )}
+          </div>
+        )}
+        {b.sub_badge ? (
+          <div className="r-badge-bar" style={{ fontWeight: 700, fontSize: "0.88em", marginTop: 4 }}>
+            {text("basics.sub_badge", "GSoC | Publications | Systems")}
+          </div>
+        ) : (
+          (b.headline || editable) && <div className="r-headline opt">{text("basics.headline", "Headline, e.g. Data Analyst")}</div>
+        )}
       </header>
       {resume.layout.order.filter((k) => !hidden.has(k)).map((k) => sections[k]())}
     </>

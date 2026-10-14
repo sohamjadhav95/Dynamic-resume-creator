@@ -48,6 +48,16 @@ class ParseRequest(BaseModel):
     text: str = Field(min_length=40, max_length=MAX_RESUME_TEXT_CHARS)
 
 
+class Replacement(BaseModel):
+    old_text: str = Field(min_length=1)
+    new_text: str = Field(min_length=1)
+
+
+class DocTailorRequest(BaseModel):
+    docx_base64: str = Field(min_length=10)
+    replacements: list[Replacement] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------- AI outputs
 
 

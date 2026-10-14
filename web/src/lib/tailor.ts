@@ -204,3 +204,38 @@ export function offlineTailor(master: Resume, jd: string, options: TailorOptions
     insights: { job: guessJob(jd), keywords, project_ideas: [], advice, removed: [], engine: "offline" },
   };
 }
+
+export function collectBulletReplacements(
+  original: Resume,
+  tailored: Resume
+): { old_text: string; new_text: string }[] {
+  const reps: { old_text: string; new_text: string }[] = [];
+
+  if (original.summary && tailored.summary && original.summary !== tailored.summary) {
+    reps.push({ old_text: original.summary, new_text: tailored.summary });
+  }
+
+  original.experience.forEach((oe, i) => {
+    const te = tailored.experience[i];
+    if (!te) return;
+    oe.bullets.forEach((ob, bi) => {
+      const tb = te.bullets[bi];
+      if (tb && ob && ob.trim() !== tb.trim()) {
+        reps.push({ old_text: ob.trim(), new_text: tb.trim() });
+      }
+    });
+  });
+
+  original.projects.forEach((op, i) => {
+    const tp = tailored.projects[i];
+    if (!tp) return;
+    op.bullets.forEach((ob, bi) => {
+      const tb = tp.bullets[bi];
+      if (tb && ob && ob.trim() !== tb.trim()) {
+        reps.push({ old_text: ob.trim(), new_text: tb.trim() });
+      }
+    });
+  });
+
+  return reps;
+}

@@ -136,3 +136,53 @@ export async function rewriteBullet(input: {
 export function warmUp(): void {
   fetch("/api/health").catch(() => {});
 }
+
+export interface ConvertDocResponse {
+  ok: boolean;
+  filename: string;
+  text: string;
+  docx_base64: string;
+}
+
+export async function convertDocFile(file: File): Promise<ConvertDocResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const token = await getAccessToken();
+  const h: Record<string, string> = {};
+  if (token) h.Authorization = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch("/api/convert-doc", {
+      method: "POST",
+      headers: h,
+      body: formData,
+    });
+  } catch {
+    throw new ApiError("Failed to reach conversion service.");
+  }
+  if (!res.ok) throw new ApiError(await errorMessage(res));
+  return await res.json();
+}
+
+export async function tailorDoc(
+  docxBase64: string,
+  replacements: { old_text: string; new_text: string }[]
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch("/api/tailor-doc", {
+      method: "POST",
+      headers: await headers(),
+      body: JSON.stringify({
+        docx_base64: docxBase64,
+        replacements,
+      }),
+    });
+  } catch {
+    throw new ApiError("Failed to reach document tailoring service.");
+  }
+  if (!res.ok) throw new ApiError(await errorMessage(res));
+  const data = await res.json();
+  return data.docx_base64;
+}

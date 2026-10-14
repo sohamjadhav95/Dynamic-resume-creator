@@ -35,6 +35,8 @@ export type PageSize = "A4" | "Letter";
 export interface Basics {
   name: string;
   headline: string;
+  contact_line?: string;
+  sub_badge?: string;
   email: string;
   phone: string;
   location: string;
@@ -101,6 +103,8 @@ export interface Resume {
   certifications: string[];
   custom_sections: CustomSection[];
   layout: Layout;
+  doc_data?: string;
+  doc_filename?: string;
 }
 
 // --------------------------------------------------------------- helpers
@@ -191,11 +195,15 @@ export function normalizeResume(input: unknown): Resume {
   base.basics = {
     name: str(b.name),
     headline: str(b.headline || b.sub_badge || b.label),
+    contact_line: b.contact_line ? str(b.contact_line) : undefined,
+    sub_badge: b.sub_badge ? str(b.sub_badge) : undefined,
     email,
     phone,
     location: str(b.location),
     links,
   };
+  if (raw.doc_data) base.doc_data = str(raw.doc_data);
+  if (raw.doc_filename) base.doc_filename = str(raw.doc_filename);
   base.summary = str(raw.summary);
 
   // Skills: legacy object {category: "a, b"} or array of {category|category_name, items|skills}

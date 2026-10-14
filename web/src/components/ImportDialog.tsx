@@ -1,8 +1,6 @@
-// Upload or paste an existing resume; AI turns it into editable sections.
-
 import { useRef, useState } from "react";
 import { streamAi } from "../lib/api";
-import { fileToText, heuristicParse, tryJson } from "../lib/importing";
+import { processResumeFile, heuristicParse, tryJson } from "../lib/importing";
 import { normalizeResume, type Resume } from "../lib/schema";
 import { Icon } from "./Icon";
 import { Dialog, useToast } from "./ui";
@@ -25,10 +23,14 @@ export function ImportDialog({
   const abort = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const structure = async (raw: string) => {
+  const structure = async (raw: string, docData?: string, docFilename?: string) => {
     setError("");
     const json = tryJson(raw);
     if (json) {
+      if (docData) {
+        json.doc_data = docData;
+        json.doc_filename = docFilename;
+      }
       onDone(json);
       return;
     }
@@ -48,7 +50,12 @@ export function ImportDialog({
         abort.current.signal,
       );
       if (final.type === "result") {
-        onDone(normalizeResume(final.data.data));
+        const parsed = normalizeResume(final.data.data);
+        if (docData) {
+          parsed.doc_data = docData;
+          parsed.doc_filename = docFilename;
+        }
+        onDone(parsed);
         return;
       }
       toast({
@@ -57,10 +64,20 @@ export function ImportDialog({
             ? final.data.message
             : "AI is unavailable, so we used quick import. Please check each section.",
       });
-      onDone(heuristicParse(raw));
+      const parsed = heuristicParse(raw);
+      if (docData) {
+        parsed.doc_data = docData;
+        parsed.doc_filename = docFilename;
+      }
+      onDone(parsed);
     } catch (e) {
       if (abort.current?.signal.aborted) {
-        onDone(heuristicParse(raw));
+        const parsed = heuristicParse(raw);
+        if (docData) {
+          parsed.doc_data = docData;
+          parsed.doc_filename = docFilename;
+        }
+        onDone(parsed);
         return;
       }
       setError((e as Error).message);
@@ -72,11 +89,11 @@ export function ImportDialog({
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setError("");
-    setBusy("Reading file…");
+    setBusy("Reading file and preserving format…");
     try {
-      const raw = await fileToText(file);
+      const proc = await processResumeFile(file);
       setBusy(null);
-      await structure(raw);
+      await structure(proc.text, proc.doc_data, proc.doc_filename);
     } catch (e) {
       setBusy(null);
       setError((e as Error).message);

@@ -1,10 +1,9 @@
-"""HTTP API. Stateless: user data lives in Supabase (or the browser for guests)."""
-
+import base64
 import json
 import logging
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -14,8 +13,17 @@ from .ai.providers import GeminiProvider, GroqProvider
 from .ai.router import Attempt, Event, collect, run_chain
 from .auth import Identity, get_identity
 from .config import Settings, get_settings
+from .converter import convert_pdf_to_docx_bytes, extract_docx_text, update_docx_bullets
 from .limits import consume
-from .schemas import ParsedResume, ParseRequest, RewriteOutput, RewriteRequest, TailorOutput, TailorRequest
+from .schemas import (
+    DocTailorRequest,
+    ParsedResume,
+    ParseRequest,
+    RewriteOutput,
+    RewriteRequest,
+    TailorOutput,
+    TailorRequest,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 log = logging.getLogger("resume.api")
@@ -210,3 +218,50 @@ async def rewrite(req: RewriteRequest, request: Request):
         return JSONResponse({"error": "AI is busy right now. Please try again in a minute."}, status_code=503)
     options = [o.strip().strip('"') for o in final.data["data"]["options"] if o.strip()][:3]
     return {"options": options, "engine": final.data["engine"]}
+
+
+@app.post("/api/convert-doc")
+async def convert_doc(file: UploadFile = File(...)):
+    """Upload a PDF or Word (.docx) resume. Converts PDF to Word DOCX preserving layout and format."""
+    filename = file.filename or "resume.pdf"
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        return JSONResponse({"error": "File size exceeds 10MB limit."}, status_code=400)
+
+    try:
+        if filename.lower().endswith(".pdf"):
+            docx_bytes = convert_pdf_to_docx_bytes(content)
+            docx_name = filename.rsplit(".", 1)[0] + ".docx"
+        elif filename.lower().endswith(".docx"):
+            docx_bytes = content
+            docx_name = filename
+        else:
+            return JSONResponse({"error": "Please upload a PDF (.pdf) or Word (.docx) file."}, status_code=400)
+
+        extracted_text = extract_docx_text(docx_bytes)
+        b64_doc = base64.b64encode(docx_bytes).decode("utf-8")
+        return {
+            "ok": True,
+            "filename": docx_name,
+            "text": extracted_text,
+            "docx_base64": b64_doc,
+        }
+    except Exception as e:
+        log.exception("Error converting document: %r", e)
+        return JSONResponse({"error": f"Failed to convert document: {str(e)}"}, status_code=500)
+
+
+@app.post("/api/tailor-doc")
+async def tailor_doc(req: DocTailorRequest):
+    """Updates a DOCX resume in-place with tailored bullets, keeping fonts, layout, and styles intact."""
+    try:
+        docx_bytes = base64.b64decode(req.docx_base64)
+        replacements = [r.model_dump() for r in req.replacements]
+        updated_bytes = update_docx_bullets(docx_bytes, replacements)
+        return {
+            "ok": True,
+            "docx_base64": base64.b64encode(updated_bytes).decode("utf-8"),
+        }
+    except Exception as e:
+        log.exception("Error tailoring doc: %r", e)
+        return JSONResponse({"error": f"Failed to update document: {str(e)}"}, status_code=500)

@@ -11,10 +11,11 @@ import { useLayoutMode, useToast } from "./components/ui";
 import { Welcome } from "./components/Welcome";
 import sample from "./data/sample-resume.json";
 import { SAMPLE_JOB } from "./data/sample-job";
-import { ApiError, getConfig, streamAi, warmUp } from "./lib/api";
+import { ApiError, getConfig, streamAi, tailorDoc, warmUp } from "./lib/api";
 import { guessJob } from "./lib/keywords";
 import { computeMatch } from "./lib/match";
 import { applyTheme, loadPrefs, savePrefs, type Theme } from "./lib/prefs";
+import { generateDocxBlob } from "./lib/docxExport";
 import { emptyResume, isEmptyResume, normalizeResume, uuid, visibleResume, type Resume } from "./lib/schema";
 import {
   clearLocal,
@@ -31,7 +32,7 @@ import {
 } from "./lib/storage";
 import { MASTER, useStore } from "./lib/store";
 import { signOut, watchSession } from "./lib/supabase";
-import { applyAiResult, offlineTailor, type Insights } from "./lib/tailor";
+import { applyAiResult, collectBulletReplacements, offlineTailor, type Insights } from "./lib/tailor";
 
 type Dialog = null | "auth" | "versions" | "settings" | "import-upload" | "import-paste";
 type Mode = { kind: "guest" } | { kind: "cloud"; userId: string } | { kind: "cloud-offline"; userId: string };
@@ -231,6 +232,42 @@ export function App() {
       }
       outcome = quick();
       note = quickRef.current ? "Quick version ready. You can tailor again with AI any time." : "Something went wrong with AI, so we made a quick version.";
+    }
+
+    if (master.doc_data) {
+      try {
+        const reps = collectBulletReplacements(master, outcome.resume);
+        if (reps.length > 0) {
+          const updatedDoc = await tailorDoc(master.doc_data, reps);
+          if (updatedDoc) {
+            outcome.resume.doc_data = updatedDoc;
+            outcome.resume.doc_filename = master.doc_filename;
+          }
+        } else {
+          outcome.resume.doc_data = master.doc_data;
+          outcome.resume.doc_filename = master.doc_filename;
+        }
+      } catch (e) {
+        console.warn("Could not update docx in-place:", e);
+      }
+    } else {
+      try {
+        const blob = await generateDocxBlob(outcome.resume);
+        const reader = new FileReader();
+        const b64 = await new Promise<string>((resolve) => {
+          reader.onloadend = () => {
+            const res = reader.result as string;
+            resolve(res.split(",")[1] || "");
+          };
+          reader.readAsDataURL(blob);
+        });
+        if (b64) {
+          outcome.resume.doc_data = b64;
+          outcome.resume.doc_filename = `${outcome.resume.basics.name || "Resume"}.docx`;
+        }
+      } catch (err) {
+        console.warn("Could not generate docx for tailored version:", err);
+      }
     }
 
     try {

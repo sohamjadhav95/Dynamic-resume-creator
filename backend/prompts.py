@@ -25,7 +25,7 @@ HONESTY RULES (never break these):
 
 def tailor_system(options: TailorOptions) -> str:
     length = (
-        "The final resume must fit on ONE page, so keep existing length strictly intact: do NOT add extra bullets or extra skills."
+        "The final resume must fit on ONE page: keep length strictly intact, do NOT add extra bullets or skills."
         if options.one_page
         else "Length is flexible, but every bullet must earn its place."
     )
@@ -41,9 +41,9 @@ Rewrite the resume content so it is a strong, honest match for this job.
 {TRUTH_RULES}
 FORMAT & SIZE PRESERVATION (CRITICAL - KEEP RESUME LENGTH AND STRUCTURE INTACT):
 - IN-PLACE REPLACEMENT: Replace existing content in-place rather than adding new items.
-  - Bullets: For EVERY experience and project entry, return EXACTLY the same number of bullets as the candidate originally has (e.g. if a project has 1 bullet, return exactly 1 tailored bullet; do not expand it to 2 or 3).
-  - Word count: At most {options.max_words_per_bullet} words per bullet (prefer 18-26 words so bullets do not wrap onto unnecessary lines).
-  - Skills: Keep the candidate's existing categories and item counts. Do NOT inflate the skills list. Instead, SWAP / REPLACE less relevant skills in that category with truthfully supported keywords matching the target job.
+  - Bullets: For EVERY entry, return EXACTLY the same number of bullets as originally present (do not expand).
+  - Word count: At most {options.max_words_per_bullet} words per bullet (prefer 18-26 words to avoid wrapping).
+  - Skills: Keep existing category counts. SWAP / REPLACE less relevant skills with truthful keywords for target job.
 - Tone: {TONES[options.tone]}
 - Bullets start with a strong past-tense verb (present tense for current roles) and follow
   Action -> What/How -> Result.
@@ -53,8 +53,8 @@ WHAT TO RETURN (JSON only, matching the schema):
 - job: the job title and company name from the job description ("" if not stated).
 - summary: 2-3 concise sentences (30-45 words) positioning the candidate for this role.
 - skills: 3-5 groups matching the candidate's category count, replacing less relevant skills with target job keywords.
-- experience: for EVERY experience id in the resume, the tailored bullets (matching original bullet count). Use the exact ids.
-- projects: for EVERY project id in the resume, a tailored stack list and bullets (matching original bullet count). Use the exact ids.
+- experience: for EVERY experience id, the tailored bullets (matching original count). Use exact ids.
+- projects: for EVERY project id, a tailored stack list and bullets (matching original count). Use exact ids.
 - project_order: all project ids, most relevant to this job first.
 - keywords: the 10-20 most important hard skills, tools and qualifications in the job description,
   written as they appear in the job. importance = "must" for requirements, "nice" for nice-to-haves.
@@ -125,7 +125,8 @@ You convert raw resume text (copied from a PDF or Word file) into structured JSO
 - Copy the person's words faithfully. Do not improve, summarise or invent anything.
 - Fix only obvious extraction problems (broken lines, stray bullets, hyphenation).
 - Put each professional work job in experience, academic/personal projects in projects, degrees in education.
-- RESEARCH PAPERS, PUBLICATIONS, AND OPEN-SOURCE CONTRIBUTIONS: If the resume has a section for Research, Publications, Open Source, or similar, put those items into custom_sections (with the appropriate section title, e.g. "Research & Open Source" or "Publications"). NEVER convert them into standard projects.
+- RESEARCH & PUBLICATIONS: Put Research, Publications, Open Source items into custom_sections
+  (with title e.g. "Research & Open Source" or "Publications"). Do not convert them into standard projects.
 - Certifications, licenses, and achievements go in certifications.
 - Use "" or [] for anything missing. links = URLs or profile handles (LinkedIn, GitHub, site).
 - dates: keep the original text, e.g. "Jan 2022 - Present".

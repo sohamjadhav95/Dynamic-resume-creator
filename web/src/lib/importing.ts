@@ -1,7 +1,42 @@
 // Getting an existing resume into the app: file -> text -> structured resume.
 // Text extraction runs in the browser. Structuring uses AI, with a heuristic parser as backup.
 
+import { convertDocFile } from "./api";
 import { emptyResume, normalizeResume, splitList, uid, type Resume } from "./schema";
+
+export interface ProcessedFile {
+  text: string;
+  doc_data?: string;
+  doc_filename?: string;
+}
+
+export async function processResumeFile(file: File): Promise<ProcessedFile> {
+  const name = file.name.toLowerCase();
+  if (file.size > 10 * 1024 * 1024) throw new Error("That file is over 10 MB. Try uploading a smaller file.");
+
+  if (name.endsWith(".json")) {
+    const text = await file.text();
+    return { text };
+  }
+
+  if (name.endsWith(".pdf") || name.endsWith(".docx") || file.type === "application/pdf") {
+    try {
+      const res = await convertDocFile(file);
+      if (res && res.text && res.docx_base64) {
+        return {
+          text: res.text,
+          doc_data: res.docx_base64,
+          doc_filename: res.filename,
+        };
+      }
+    } catch (err) {
+      console.warn("Backend document conversion failed, falling back to client-side extraction:", err);
+    }
+  }
+
+  const text = await fileToText(file);
+  return { text };
+}
 
 export async function fileToText(file: File): Promise<string> {
   const name = file.name.toLowerCase();

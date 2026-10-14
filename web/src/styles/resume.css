@@ -312,3 +312,39 @@
     break-after: avoid;
   }
 }
+
+/* Word (.docx) Preview */
+.docx-viewer-root {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100%;
+}
+
+.docx-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.docx-container .docx-wrapper {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.docx-container section.docx-page,
+.docx-container .docx-wrapper > section {
+  background: #ffffff !important;
+  box-shadow: var(--shadow-sheet, 0 16px 36px -12px rgba(27, 26, 23, 0.22)) !important;
+  margin-bottom: 24px !important;
+  border-radius: 2px !important;
+  color: #111111 !important;
+}
+
+@media print {
+  .docx-container section.docx-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+  }
+}
