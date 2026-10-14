@@ -154,18 +154,44 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
   const verdict =
     match.score >= 80 ? "Strong match" : match.score >= 60 ? "Good match" : match.score >= 40 ? "Partial match" : "Weak match";
 
+  const [replaceTarget, setReplaceTarget] = useState<string>("");
+
+  const allExistingSkills = resume.skills.flatMap((g) =>
+    g.items.map((it) => ({ skill: it, category: g.category }))
+  );
+
   const withSkill = (r: typeof resume, term: string) => {
     const next = clone(r);
     if (next.skills.length) next.skills[0].items.push(term);
     else next.skills.push({ id: uid("sk"), category: "Skills", items: [term] });
     return next;
   };
+
   const addSkill = (term: string) => {
     edit(withSkill(resume, term));
-    // Also remember it in the master profile so future versions include it.
     if (state.activeId !== MASTER) dispatch({ type: "setMaster", resume: withSkill(state.ws.master, term) });
     setAsking(null);
-    toast({ message: `Added “${term}” to your skills. Mention it in a bullet too for more weight.` });
+    setReplaceTarget("");
+    toast({ message: `Added “${term}” to your skills.` });
+  };
+
+  const replaceSkill = (oldSkill: string, newSkill: string) => {
+    const next = clone(resume);
+    let replaced = false;
+    for (const g of next.skills) {
+      const idx = g.items.indexOf(oldSkill);
+      if (idx !== -1) {
+        g.items[idx] = newSkill;
+        replaced = true;
+        break;
+      }
+    }
+    if (replaced) {
+      edit(next);
+      setAsking(null);
+      setReplaceTarget("");
+      toast({ message: `Replaced “${oldSkill}” with “${newSkill}” (size & format kept intact).` });
+    }
   };
 
   return (
@@ -197,7 +223,10 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
                 key={m.term}
                 className={`chip missing ${m.importance === "nice" ? "nice" : ""}`}
                 aria-pressed={asking?.term === m.term}
-                onClick={() => setAsking(asking?.term === m.term ? null : m)}
+                onClick={() => {
+                  setAsking(asking?.term === m.term ? null : m);
+                  setReplaceTarget("");
+                }}
                 title={m.importance === "nice" ? "Nice to have" : "Required"}
               >
                 {m.term}
@@ -206,15 +235,43 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
           </div>
           {asking && (
             <div className="rewrite-source" style={{ marginTop: 10 }}>
-              <p style={{ margin: "0 0 8px" }}>
-                Have you really used <strong>{asking.term}</strong>? Only add skills you can talk about in an interview.
+              <p style={{ margin: "0 0 8px", fontSize: "0.92em" }}>
+                Add <strong>{asking.term}</strong> to your resume. To keep page size intact, replace an existing skill:
               </p>
-              <div className="row wrap">
-                <button className="btn btn-sm btn-ink" onClick={() => addSkill(asking.term)}>
-                  Yes, add to skills
+              {allExistingSkills.length > 0 && (
+                <div className="row" style={{ marginBottom: 8 }}>
+                  <select
+                    className="select grow"
+                    value={replaceTarget}
+                    onChange={(e) => setReplaceTarget(e.target.value)}
+                    aria-label="Skill to replace"
+                  >
+                    <option value="">Select skill to replace…</option>
+                    {resume.skills.map((g) => (
+                      <optgroup key={g.id} label={g.category || "Skills"}>
+                        {g.items.map((it) => (
+                          <option key={it} value={it}>
+                            {it}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button
+                    className="btn btn-sm btn-ink"
+                    disabled={!replaceTarget}
+                    onClick={() => replaceSkill(replaceTarget, asking.term)}
+                  >
+                    Replace
+                  </button>
+                </div>
+              )}
+              <div className="row wrap" style={{ gap: 6 }}>
+                <button className="btn btn-sm btn-ghost" onClick={() => addSkill(asking.term)}>
+                  Add without replacing
                 </button>
-                <button className="btn btn-sm btn-ghost" onClick={() => setAsking(null)}>
-                  Not really
+                <button className="btn btn-sm btn-ghost" onClick={() => { setAsking(null); setReplaceTarget(""); }}>
+                  Cancel
                 </button>
               </div>
             </div>

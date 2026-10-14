@@ -96,14 +96,15 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
 
   if (ai.skills?.length) {
     const groups = ai.skills
-      .map((g) => {
+      .map((g, gi) => {
         const items = g.items.map((s) => s.trim()).filter(Boolean);
         const kept = items.filter((s) => {
           const ok = isSupported(s, source);
           if (!ok) removed.push(s);
           return ok;
         });
-        return { id: uid("sk"), category: g.category.trim(), items: kept };
+        const originalCap = master.skills[gi]?.items?.length ?? items.length;
+        return { id: uid("sk"), category: g.category.trim(), items: kept.slice(0, Math.max(originalCap, 1)) };
       })
       .filter((g) => g.category && g.items.length);
     if (groups.length) out.skills = groups;
@@ -112,7 +113,10 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
   const expById = new Map(ai.experience?.map((e) => [e.id, e]) ?? []);
   out.experience = out.experience.map((e) => {
     const t = expById.get(e.id);
-    const bullets = t?.bullets.map((b) => b.trim()).filter(Boolean);
+    let bullets = t?.bullets.map((b) => b.trim()).filter(Boolean);
+    if (bullets?.length && e.bullets?.length) {
+      bullets = bullets.slice(0, e.bullets.length);
+    }
     return bullets?.length ? { ...e, bullets } : e;
   });
 
@@ -120,7 +124,10 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
   out.projects = out.projects.map((p) => {
     const t = projById.get(p.id);
     if (!t) return p;
-    const bullets = t.bullets.map((b) => b.trim()).filter(Boolean);
+    let bullets = t.bullets.map((b) => b.trim()).filter(Boolean);
+    if (bullets?.length && p.bullets?.length) {
+      bullets = bullets.slice(0, p.bullets.length);
+    }
     const stack = t.stack.map((s) => s.trim()).filter((s) => s && isSupported(s, source));
     return { ...p, bullets: bullets.length ? bullets : p.bullets, stack: stack.length ? stack : p.stack };
   });

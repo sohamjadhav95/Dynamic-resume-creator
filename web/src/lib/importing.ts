@@ -74,8 +74,9 @@ const HEADINGS: [RegExp, string][] = [
   [/^(technical\s+|core\s+|key\s+)?(skills|competencies|technologies|tech stack|tools)(\s*&\s*\w+)?$/i, "skills"],
   [/^(professional\s+|work\s+|relevant\s+)?(experience|employment( history)?|work history|career history)$/i, "experience"],
   [/^(academic\s+|personal\s+|selected\s+|key\s+)?projects$/i, "projects"],
+  [/^(research(\s*&\s*open\s*source)?|publications?|papers?|open\s*source(\s*contributions?)?)$/i, "research"],
+  [/^(certifications?(\s*&\s*(achievements?|licenses?))?|licenses?(\s*&\s*certifications?)?|achievements?|courses)$/i, "certifications"],
   [/^(education|academics|academic background|qualifications)$/i, "education"],
-  [/^(certifications?|licenses?( & certifications)?|courses)$/i, "certifications"],
 ];
 
 const BULLET = /^[•●▪◦‣\-–*·]\s*/;
@@ -138,6 +139,28 @@ export function heuristicParse(text: string): Resume {
         }
         break;
       }
+      case "research": {
+        let sec = r.custom_sections.find((s) => /research|publication|open source/i.test(s.title));
+        if (!sec) {
+          sec = { id: uid("cs"), title: "Research & Open Source", items: [] };
+          r.custom_sections.push(sec);
+        }
+        const cur = sec.items[sec.items.length - 1];
+        if (isBullet && cur) {
+          cur.bullets.push(content);
+        } else if (!isBullet || !cur) {
+          const dates = content.match(YEAR)?.[0] ?? "";
+          const [title, subtitle] = content.replace(dates, "").split(/\s*\|\s*/);
+          sec.items.push({
+            id: uid("ci"),
+            title: (title ?? content).trim(),
+            subtitle: (subtitle ?? "").trim(),
+            dates,
+            bullets: [],
+          });
+        }
+        break;
+      }
       case "education": {
         const cur = r.education[r.education.length - 1];
         if (!cur || (cur.degree && cur.institution)) {
@@ -145,9 +168,15 @@ export function heuristicParse(text: string): Resume {
         } else cur.institution = content;
         break;
       }
-      case "certifications":
-        r.certifications.push(content);
+      case "certifications": {
+        const parts = content.split(/\s*[•|]\s*/).map((s) => s.trim()).filter(Boolean);
+        if (parts.length > 1) {
+          r.certifications.push(...parts);
+        } else {
+          r.certifications.push(content);
+        }
         break;
+      }
       default:
         break;
     }

@@ -18,3 +18,4 @@ web/dist/
 .DS_Store
 supabase/.temp/
 *.tsbuildinfo
+public/

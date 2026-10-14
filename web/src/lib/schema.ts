@@ -255,6 +255,12 @@ export function normalizeResume(input: unknown): Resume {
   }));
   if (Array.isArray(raw.research_and_open_source) && raw.research_and_open_source.length) {
     custom.push({ id: uid("cs"), title: "Research & Open Source", items: raw.research_and_open_source.map(customItem) });
+  } else if ((Array.isArray(raw.publications) && raw.publications.length) || (Array.isArray(raw.open_source) && raw.open_source.length)) {
+    const items = [
+      ...(Array.isArray(raw.publications) ? raw.publications.map(customItem) : []),
+      ...(Array.isArray(raw.open_source) ? raw.open_source.map(customItem) : []),
+    ];
+    custom.push({ id: uid("cs"), title: "Research & Open Source", items });
   }
   base.custom_sections = custom;
 
@@ -277,10 +283,10 @@ export function normalizeResume(input: unknown): Resume {
 function customItem(i: any): CustomItem {
   return {
     id: str(i.id) || uid("ci"),
-    title: str(i.title ?? i.name),
-    subtitle: str(i.subtitle),
+    title: str(i.title ?? i.name ?? i.project),
+    subtitle: str(i.subtitle ?? i.status),
     dates: str(i.dates ?? i.timeline ?? i.date),
-    bullets: strList(i.bullets ?? i.highlights),
+    bullets: strList(i.bullets ?? i.highlights ?? (i.details ? [i.details] : [])),
   };
 }
 

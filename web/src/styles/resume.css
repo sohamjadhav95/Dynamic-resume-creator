@@ -4,10 +4,10 @@
   --d: 0; /* density: -3 roomy … +4 tight (set inline) */
   --page-w: 210mm;
   --page-h: 297mm;
-  --margin: calc(15mm - var(--d) * 1.4mm);
-  --fs: calc(10pt - var(--d) * 0.3pt);
-  --lh: calc(1.42 - var(--d) * 0.035);
-  --gap: calc(10pt - var(--d) * 1.5pt);
+  --margin: calc(13mm - var(--d) * 1.2mm);
+  --fs: calc(9.4pt - var(--d) * 0.25pt);
+  --lh: calc(1.36 - var(--d) * 0.03);
+  --gap: calc(8pt - var(--d) * 1.1pt);
   --accent-ink: #1b1a17;
   position: relative;
   width: var(--page-w);
@@ -155,9 +155,10 @@
 
 /* ---------- Template: Compact */
 .tpl-compact {
-  --fs: calc(9.3pt - var(--d) * 0.28pt);
-  --gap: calc(8pt - var(--d) * 1.2pt);
-  --margin: calc(12mm - var(--d) * 1.2mm);
+  --fs: calc(8.8pt - var(--d) * 0.22pt);
+  --lh: calc(1.28 - var(--d) * 0.025);
+  --gap: calc(6pt - var(--d) * 0.8pt);
+  --margin: calc(10.5mm - var(--d) * 1.0mm);
 }
 .tpl-compact .r-header {
   display: grid;

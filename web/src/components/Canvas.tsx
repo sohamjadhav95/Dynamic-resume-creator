@@ -11,7 +11,7 @@ export const PAGE_MM = { A4: { w: 210, h: 297 }, Letter: { w: 215.9, h: 279.4 } 
 
 export function marginMm(r: Resume): number {
   const d = r.layout.density;
-  return r.layout.template === "compact" ? 12 - d * 1.2 : 15 - d * 1.4;
+  return r.layout.template === "compact" ? 10.5 - d * 1.0 : 13 - d * 1.2;
 }
 
 export interface PageInfo {

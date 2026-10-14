@@ -64,7 +64,7 @@ def get_settings() -> Settings:
         gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
         gemini_models=_list(
             "GEMINI_MODELS",
-            "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash-lite,gemini-2.5-flash",
+            "gemini-3.6-flash,gemini-3.5-flash-lite,gemini-3.5-flash",
         ),
         groq_api_key=os.environ.get("GROQ_API_KEY", ""),
         groq_models=_list("GROQ_MODELS", "openai/gpt-oss-120b,openai/gpt-oss-20b"),
