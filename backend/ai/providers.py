@@ -104,7 +104,12 @@ class GroqProvider:
             ],
             "temperature": temperature,
             "response_format": {"type": "json_object"},
+            # Without a cap Groq estimates the answer length itself and can refuse the request on its
+            # free-tier output-tokens-per-minute limit. 4096 is accepted and is plenty for our JSON.
+            "max_tokens": 4096,
         }
+        if model.startswith("qwen/"):
+            body["reasoning_effort"] = "none"  # answer directly; thinking only slows this task down
         if model.startswith("openai/gpt-oss"):
             body["reasoning_effort"] = "low"
             body["include_reasoning"] = False

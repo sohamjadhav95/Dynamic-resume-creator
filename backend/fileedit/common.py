@@ -25,7 +25,7 @@ CONTACT_RE = re.compile(r"@|https?://|www\.|linkedin|github\.com|\+?\d[\d ()-]{8
 
 # Rewrites may be a little shorter than the original, never much longer.
 MIN_LENGTH_RATIO = 0.7
-MAX_LENGTH_RATIO = 1.15
+MAX_LENGTH_RATIO = 1.10
 
 
 @dataclass

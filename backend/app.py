@@ -16,6 +16,7 @@ from .ai.providers import GeminiProvider, GroqProvider
 from .ai.router import Attempt, Event, collect, run_chain
 from .auth import Identity, get_identity
 from .config import Settings, get_settings
+from .fileedit.screen import screen_edits
 from .limits import consume
 from .schemas import (
     FileFixOutput,
@@ -79,18 +80,19 @@ async def unexpected_error(_: Request, exc: Exception):
 
 
 def build_attempts(settings: Settings, user_gemini_key: str | None, quick: bool = False) -> list[Attempt]:
-    attempts: list[Attempt] = []
+    """The models to try, in the order of AI_CHAIN (providers without a key are skipped)."""
     gemini_budget = settings.ai_gemini_budget_seconds if not quick else 45
     groq_budget = settings.ai_groq_budget_seconds if not quick else 25
     if user_gemini_key:
         # Own key: only their Gemini, so our shared keys are never used without a quota.
         return [Attempt(GeminiProvider(user_gemini_key), settings.gemini_models, gemini_budget)]
-    if settings.gemini_api_key:
-        attempts.append(Attempt(GeminiProvider(settings.gemini_api_key), settings.gemini_models, gemini_budget))
-    if settings.groq_api_key:
-        attempts.append(
-            Attempt(GroqProvider(settings.groq_api_key, timeout=groq_budget), settings.groq_models, groq_budget)
-        )
+    attempts: list[Attempt] = []
+    for spec in settings.ai_chain:
+        provider, _, model = spec.partition(":")
+        if provider == "groq" and settings.groq_api_key and model:
+            attempts.append(Attempt(GroqProvider(settings.groq_api_key, timeout=groq_budget), [model], groq_budget))
+        elif provider == "gemini" and settings.gemini_api_key and model:
+            attempts.append(Attempt(GeminiProvider(settings.gemini_api_key), [model], gemini_budget))
     return attempts
 
 
@@ -337,7 +339,13 @@ async def file_tailor(req: FileTailorRequest, request: Request):
         ai = final.data["data"]
         yield sse(Event("checking", {}))
         edits = {e["id"]: e["text"] for e in ai["edits"] if e["id"] in segments}
-        out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, edits)
+
+        async def write(edits: dict[str, str]) -> tuple[bytes, list[fileedit.EditResult]]:
+            allowed, refused = screen_edits(info, edits)  # no borrowed tools, no skills you don't have
+            out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, allowed)
+            return out, results + refused
+
+        out, results = await write(edits)
 
         # One more short AI round for lines whose rewrite was too long or too short.
         failed = [r for r in results if r.status in ("too_long", "too_short", "changed_facts")]
@@ -369,7 +377,7 @@ async def file_tailor(req: FileTailorRequest, request: Request):
                 retry = {e["id"]: e["text"] for e in fixed.data["data"]["edits"] if e["id"] in edits}
                 if retry:
                     edits.update(retry)
-                    out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, edits)
+                    out, results = await write(edits)
 
         applied = [{"id": r.id, "text": r.new} for r in results if r.status == "applied"]
         log.info(

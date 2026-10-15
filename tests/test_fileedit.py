@@ -263,3 +263,50 @@ def test_api_file_tailor_writes_ai_edits_and_reports_refusals(client, monkeypatc
     out = base64.b64decode(payload["file_base64"])
     assert "Languages: Python, Airflow, SQL" in pdf_text(out)
     assert BULLET_1.split(",")[0] in pdf_text(out)
+
+
+# ---------------------------------------------------------------- honesty screen
+
+
+def test_screen_blocks_skills_and_tools_the_resume_does_not_show():
+    from backend.fileedit.screen import new_terms, unsupported_skills
+
+    resume = "Python, SQL, Airflow, Docker\nBuilt pipelines with Airflow. Benchmarked U-Net (Dice 0.94) on cardiac CT."
+    assert unsupported_skills("Python, SQL, Airflow", resume) == []
+    assert unsupported_skills("Python, Kubernetes, CT/MRI", resume) == ["Kubernetes", "CT/MRI"]
+    # A bullet may only name tools from itself or its own project / job lines.
+    assert new_terms("Built pipelines with Airflow.", "Built Airflow pipelines in Docker.", "Data Engineer | Acme") == [
+        "Docker"
+    ]
+    assert (
+        new_terms("Built pipelines with Airflow.", "Built Airflow pipelines in Docker.", "Stack: Docker, Airflow") == []
+    )
+    assert new_terms("Used Policy-as- Prompt rules.", "Used Policy-as-Prompt rules.", "") == []  # PDF line-split word
+    assert new_terms("Led 3 teams.", "Mentored 3 teams; Shipped weekly.", "") == []  # sentence starts are fine
+
+
+def test_api_refuses_borrowed_skills_in_file_tailoring(client, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    data = make_pdf()
+    skills = seg(fileedit.extract("pdf", data), "skills")
+
+    async def fake_stream(self, model, system, prompt, schema, temperature):
+        if "refused" in system:
+            yield Chunk("text", json.dumps({"edits": [{"id": skills.id, "text": "Python, SQL, Airflow, Kubernetes"}]}))
+            return
+        out = {
+            "job": {"title": "Data Engineer", "company": ""},
+            "edits": [{"id": skills.id, "text": "Python, Kubernetes, SQL, Airflow, Docker"}],
+            "keywords": [],
+            "project_ideas": [],
+            "advice": [],
+        }
+        yield Chunk("text", json.dumps(out))
+
+    monkeypatch.setattr(app_module.GeminiProvider, "stream", fake_stream)
+    res = client.post("/api/file/tailor", json={"file_type": "pdf", "file_base64": b64(data), "job_description": JD})
+    payload = json.loads([b for b in res.text.split("\n\n") if b.startswith("event: result")][0].split("data: ", 1)[1])
+    result = payload["data"]["results"][0]
+    assert result["status"] == "changed_facts" and "Kubernetes" in result["note"]
+    assert "Kubernetes" not in pdf_text(base64.b64decode(payload["data"]["file_base64"]))

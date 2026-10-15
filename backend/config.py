@@ -33,7 +33,8 @@ class Settings:
     gemini_api_key: str = ""
     gemini_models: list[str] = field(default_factory=list)
     groq_api_key: str = ""
-    groq_models: list[str] = field(default_factory=list)
+    # Which models to try, in order, as "provider:model". Chosen with scripts/benchmark_models.py.
+    ai_chain: list[str] = field(default_factory=list)
 
     supabase_url: str = ""
     supabase_anon_key: str = ""
@@ -45,7 +46,7 @@ class Settings:
     # Timing. Slow is NOT a failure: we only give up on a provider when it errors,
     # stops sending anything for `ai_stall_seconds`, or uses up its whole budget.
     ai_stall_seconds: float = 45
-    ai_gemini_budget_seconds: float = 240
+    ai_gemini_budget_seconds: float = 120
     ai_groq_budget_seconds: float = 40
     ai_total_deadline_seconds: float = 285  # Vercel Hobby hard limit is 300s
     heartbeat_seconds: float = 10
@@ -62,12 +63,13 @@ class Settings:
 def get_settings() -> Settings:
     return Settings(
         gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
-        gemini_models=_list(
-            "GEMINI_MODELS",
-            "gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite",
-        ),
+        # Used when someone adds their own Gemini key in Settings.
+        gemini_models=_list("GEMINI_MODELS", "gemini-3.1-flash-lite,gemini-3.5-flash-lite"),
         groq_api_key=os.environ.get("GROQ_API_KEY", ""),
-        groq_models=_list("GROQ_MODELS", "openai/gpt-oss-120b,openai/gpt-oss-20b"),
+        ai_chain=_list(
+            "AI_CHAIN",
+            "groq:qwen/qwen3.8-27b,gemini:gemini-3.1-flash-lite,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b",
+        ),
         supabase_url=os.environ.get("SUPABASE_URL", "").rstrip("/"),
         # New key names (publishable / secret) and legacy names (anon / service_role) both work.
         supabase_anon_key=os.environ.get("SUPABASE_PUBLISHABLE_KEY") or os.environ.get("SUPABASE_ANON_KEY", ""),
@@ -76,7 +78,7 @@ def get_settings() -> Settings:
         allowed_origins=_list("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"),
         ip_salt=os.environ.get("IP_HASH_SALT", "change-me"),
         ai_stall_seconds=_float("AI_STALL_SECONDS", 45),
-        ai_gemini_budget_seconds=_float("AI_GEMINI_BUDGET_SECONDS", 240),
+        ai_gemini_budget_seconds=_float("AI_GEMINI_BUDGET_SECONDS", 120),
         ai_groq_budget_seconds=_float("AI_GROQ_BUDGET_SECONDS", 40),
         ai_total_deadline_seconds=_float("AI_TOTAL_DEADLINE_SECONDS", 285),
         heartbeat_seconds=_float("AI_HEARTBEAT_SECONDS", 10),

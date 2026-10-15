@@ -159,3 +159,17 @@ async def test_quota_fails_open_when_supabase_unreachable(monkeypatch):
     get_settings.cache_clear()
     quota = await limits.consume(limits.Identity(subject="ip:x", user_id=None), "tailor")
     assert quota.allowed
+
+
+def test_ai_chain_order_and_missing_keys(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "g")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("AI_CHAIN", "groq:qwen/qwen3.8-27b,gemini:gemini-3.1-flash-lite,groq:openai/gpt-oss-20b")
+    get_settings.cache_clear()
+    attempts = app_module.build_attempts(get_settings(), None)
+    assert [(a.provider.name, a.models) for a in attempts] == [
+        ("groq", ["qwen/qwen3.8-27b"]),
+        ("groq", ["openai/gpt-oss-20b"]),
+    ]  # no Gemini key -> Gemini entries are skipped
+    own = app_module.build_attempts(get_settings(), "user-own-gemini-key-123456")
+    assert [a.provider.name for a in own] == ["gemini"]  # an own key never uses our shared keys

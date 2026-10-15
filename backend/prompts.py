@@ -3,6 +3,7 @@
 import json
 
 from .fileedit.common import CONTACT_RE
+from .fileedit.screen import entry_contexts
 from .schemas import TailorOptions
 
 TONES = {
@@ -68,13 +69,28 @@ FOR EACH LINE YOU CHANGE, RETURN {{"id": "<the id>", "text": "<new words>"}}:
 - LENGTH IS STRICT: every [EDIT] line shows "aim N chars (min A, max B)". Your text must have
   between A and B characters (spaces included), as close to N as you can. This is what keeps the
   page identical. Same size, better words.
-- Bullets: one line in, one line out. Keep the same meaning and facts; make the parts that
-  matter for this job easy to see, using the job's words where they truthfully apply.
+- Bullets: one line in, one line out. Each bullet shows "under ..." = the project or job it belongs
+  to (its title and tech stack). ALIGN EVERY BULLET WITH THE JOB:
+  1. Read what the job asks for (tasks, tools, domain, results).
+  2. Find what in THIS project or job matches it: the work described in the bullet, the tools in
+     its tech stack, its results and numbers.
+  3. Rewrite the bullet so the matching part comes first and is easy to see, using the job's own
+     words for it when they truthfully describe the same thing. Drop or shorten parts this job
+     does not care about to make room (keep every number).
+  If a bullet lists things (topics, tools, tasks, people), you may reorder or drop some, but never
+  swap them for different ones taken from the job post.
+  You may mention a tool from the same project's tech stack; never a tool from somewhere else
+  (a tool that appears only in the skills list or in another project does not count).
 - Skills lines: keep a comma-separated list with about the same number of items. Put the skills
-  this job asks for first. You may swap in a skill from elsewhere in the resume, never a new one.
-- Summary: rewrite it for this job (same length), saying plainly what the candidate does and why it
-  fits this role.
-- If a line is already a strong match, leave it out of "edits".
+  this job asks for first. You may swap in a skill that appears elsewhere in the resume. Never add a
+  skill from the job post that the resume does not show (code checks this and refuses the line).
+- Summary: ALIGN IT WITH THE JOB (same length). Open with the role this job is hiring for, worded
+  the way the job says it, if the resume truly supports it (otherwise the closest honest title).
+  Then name the candidate's 2-3 strongest matches with THIS job, taken from anywhere in the resume
+  (skills, projects, results, publications). Keep every number and fact from the old summary that
+  still matters; replace the parts this job does not care about.
+- Rewrite every bullet and the summary for this job. Leave a line out of "edits" only if it is
+  already the best possible match and any change would make it worse.
 {TRUTH_RULES}
 {PLAIN_LANGUAGE}
 - Tone: {TONES[options.tone]}
@@ -102,14 +118,17 @@ def char_range(text: str, min_chars: int, max_chars: int) -> tuple[int, int, int
 
 def file_tailor_prompt(extracted: dict, job_description: str) -> str:
     segments = {s["id"]: s for s in extracted["segments"]}
+    contexts = entry_contexts(extracted["outline"], set(segments))
     lines: list[str] = []
     for i, item in enumerate(extracted["outline"]):
         seg = segments.get(item["id"])
         if seg:
             aim, lo, hi = char_range(seg["text"], seg["min_chars"], seg["max_chars"])
             label = f' | label "{seg["prefix"]}"' if seg["prefix"] and seg["kind"] in ("skills", "labeled") else ""
+            entry = contexts.get(seg["id"]) or []
+            under = f' | under "{" - ".join(entry)[:160]}"' if seg["kind"] == "bullet" and entry else ""
             lines.append(
-                f"[EDIT {seg['id']} | {seg['kind']} | {seg['section'] or 'top'}{label} | "
+                f"[EDIT {seg['id']} | {seg['kind']} | {seg['section'] or 'top'}{label}{under} | "
                 f"aim {aim} chars (min {lo}, max {hi})] {seg['text']}"
             )
         elif i == 0 or CONTACT_RE.search(item["text"]):
@@ -161,9 +180,15 @@ SAME SIZE, BETTER WORDS (strict):
   bullet 1, and so on. Never add or drop a bullet.
 - Each new bullet must be about as long as the bullet it replaces: within 85%-110% of its "chars".
 - summary: same length as the original summary (within 85%-110%). If the original is empty, return "".
+  Align it with the job: open with the role the job is hiring for (if the resume supports it), then
+  the candidate's 2-3 strongest matches with this job from anywhere in the resume.
 - skills: the same groups with the same names, and about the same number of items in each.
   Put the job's skills first. You may swap in a skill from elsewhere in the resume, never a new one.
 - projects: keep each project's stack items (you may reorder them for the job).
+- ALIGN EVERY BULLET WITH THE JOB: for each bullet, find what in THAT job or project (its role,
+  name, stack and the bullet itself) matches what the job asks for, put it first, and use the job's
+  words for it where they truthfully apply. Drop parts the job does not care about to make room,
+  but keep every number. Only mention tools from that same job's or project's stack.
 - Tone: {TONES[options.tone]}
 {extra}
 WHAT TO RETURN (JSON only, matching the schema):

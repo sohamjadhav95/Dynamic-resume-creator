@@ -37,7 +37,7 @@ import { applyAiResult, applyFileChanges, offlineTailor, type FileTailorResult, 
 type Dialog = null | "auth" | "versions" | "settings" | "import-upload" | "import-paste";
 type Mode = { kind: "guest" } | { kind: "cloud"; userId: string } | { kind: "cloud-offline"; userId: string };
 
-const ENGINE_NAME: Record<string, string> = { gemini: "Gemini", groq: "backup AI (Groq)", offline: "the quick engine" };
+const ENGINE_NAME: Record<string, string> = { gemini: "Gemini", groq: "Groq", offline: "the quick engine" };
 
 /** Only what the AI needs: no name, email, phone or layout leaves the browser. */
 function aiPayload(master: Resume) {

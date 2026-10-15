@@ -48,11 +48,24 @@ endpoints `/api/file/extract`, `/api/file/tailor` (streaming) and `/api/file/ren
   The first sign-in moves the guest resume into the account.
 - **Accessible**: keyboard everywhere, visible focus, screen-reader labels, WCAG AA contrast, reduced motion, dark mode.
 
-## It always works, even when Gemini is down
+## Which AI models, and why (all free tiers)
 
 ```
-Gemini (several models)  ──error/stall──▶  Groq (backup AI)  ──error──▶  Offline engine (in the browser)
+Groq · qwen3.8-27b  ─▶  Gemini · 3.1-flash-lite  ─▶  Gemini · 3.5-flash-lite  ─▶  Groq · gpt-oss-20b  ─▶  Offline engine
 ```
+
+The order was picked with `scripts/benchmark_models.py`, which sends every candidate model the real tailoring
+task for your resume and grades the answers with the app's own checks (fits the lines, keeps numbers, no invented
+skills), speed and rate limits:
+
+```bash
+python scripts/benchmark_models.py --file my_resume.pdf            # all candidates, in parallel
+python scripts/benchmark_models.py --file my_resume.pdf --only groq --runs 2
+```
+
+Results (Oct 2026): Groq's Qwen was fastest (~5 s) with the most usable rewrites; Gemini's lite models came next and run
+on another company's servers; the bigger Gemini models were "busy" most of the time and every free OpenRouter model
+was blocked, rate-limited or took minutes. Change the order without code via the `AI_CHAIN` environment variable.
 
 - **Slow is not a failure.** Answers stream in live, and a model is dropped only when it errors, returns bad JSON,
   or sends **nothing at all** for 45 s.
