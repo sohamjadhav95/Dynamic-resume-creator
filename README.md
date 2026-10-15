@@ -1,9 +1,30 @@
 # Tailor — one resume, tailored to every job
 
-Paste a job post and get a version of your resume that speaks its language: honest AI rewrites, a live match score,
-and a clean one-page PDF that applicant tracking systems (ATS) can read.
+Upload your resume (PDF or Word), paste a job post, and get a version that speaks the job's language, **in your own
+file, with your own design**. Only the words change: same fonts, same layout, same page count.
 
 ![Studio](docs/screenshots/studio.png)
+
+## How tailoring works
+
+1. **Find the safe lines.** We read your file and find the lines that can change: bullet points, the summary and skill
+   lists. Your name, contact details, job titles, companies, dates, education and certificates are never touched.
+2. **Rewrite in plain words.** The AI reads the job post and rewrites those lines in simple, human language, using the
+   job's keywords only where they are true for you. It **replaces** text; it never adds lines. Each line comes with a
+   character range so the new text has the same size as the old one.
+3. **Check every rewrite** (on the server, not trusted to the AI):
+   - every number in the old line must still be there, and no new numbers may appear;
+   - it must be about the same length (never more than ~15% longer);
+   - it must fit in **the same number of lines** (measured with the real font metrics).
+   Lines that fail go back to the AI once with the exact reason; if they fail again, the original line stays.
+4. **Write it into your file.** PDF: the old characters are removed and the new words are drawn on the same baselines,
+   with the same font (or one with identical widths), size and colour; justified text stays justified and bold keywords
+   stay bold. Word: only the text inside the existing runs changes, so styles, bullets and indents stay as they are.
+5. **You stay in control.** Every change is listed (before → after). Switch any change off, or reword it yourself; your
+   wording gets the same fit check.
+
+Code: `backend/fileedit/` (PDF via PyMuPDF, Word via python-docx), prompts in `backend/prompts.py`,
+endpoints `/api/file/extract`, `/api/file/tailor` (streaming) and `/api/file/render` in `backend/app.py`.
 
 ## What it does
 
@@ -11,7 +32,8 @@ and a clean one-page PDF that applicant tracking systems (ATS) can read.
   On tablets the right panel becomes a tab; on phones there is a bottom tab bar.
 - **Master profile + versions**: you keep one master profile with everything you've done. Each job gets its own
   tailored version; the master is never changed by tailoring.
-- **Honest by design**: the AI may rephrase and reorder, but never invent jobs, dates, numbers or projects.
+- **Honest by design**: the AI may rephrase and reorder, but never invent jobs, dates, numbers or projects. Numbers
+  are checked by code, not just requested in the prompt.
   A **truth check** removes any skill the AI adds that your master profile doesn't mention.
   The old "invent a project for this job" slot is now **Project ideas**: suggestions you could build, shown on the side.
 - **Instant match score** (runs in the browser, no AI needed): required vs nice-to-have keywords, found and missing,
@@ -20,7 +42,8 @@ and a clean one-page PDF that applicant tracking systems (ATS) can read.
   add a keyword, fix grammar).
 - **Page meter** ("1 page ✓" / "over by 3 lines") and **Fit to 1 page**. 3 ATS-safe templates, A4/Letter, spacing and
   heading color.
-- **Import** a PDF, Word file or pasted text; AI splits it into sections (with a non-AI parser as backup).
+- **Keep your design**: upload a PDF or Word file and tailoring edits that file in place (see above). Download the
+  tailored PDF or Word file directly. Text or pasted resumes use the built-in template instead.
 - **Accounts are optional**: guests save in the browser; signing in (Google or email link) saves to the cloud.
   The first sign-in moves the guest resume into the account.
 - **Accessible**: keyboard everywhere, visible focus, screen-reader labels, WCAG AA contrast, reduced motion, dark mode.
@@ -31,8 +54,10 @@ and a clean one-page PDF that applicant tracking systems (ATS) can read.
 Gemini (several models)  ──error/stall──▶  Groq (backup AI)  ──error──▶  Offline engine (in the browser)
 ```
 
-- **Slow is not a failure.** Answers stream in live, and a provider is dropped only when it errors, returns bad JSON,
-  or sends **nothing at all** for 90 s. A busy model can keep working for up to ~4 minutes (Vercel allows 5).
+- **Slow is not a failure.** Answers stream in live, and a model is dropped only when it errors, returns bad JSON,
+  or sends **nothing at all** for 45 s.
+- **Busy models wait their turn.** A model that answers "503 busy" gets one retry after a few seconds; after that it is
+  tried last for 90 seconds, so the next requests go straight to a model that works.
 - **"Use quick version now"** skips the wait at any time.
 - The **offline engine** reorders your skills, bullets and projects for the job and trims to length. It never writes new
   text, so it can't make anything up. It also kicks in automatically when the server can't be reached or the daily limit
@@ -45,10 +70,11 @@ Gemini (several models)  ──error/stall──▶  Groq (backup AI)  ──err
 | --- | --- | --- |
 | Web app | React 19 + TypeScript + Vite, plain CSS design tokens | `web/` → Vercel CDN |
 | API | FastAPI (stateless), streaming Server-Sent Events | `backend/`, entry `api/index.py` → Vercel Python function |
-| AI | Gemini (`google-genai`) → Groq (OpenAI-compatible HTTP) | `backend/ai/` |
+| AI | Gemini (`google-genai`) → Groq (OpenAI-compatible HTTP), both free tiers | `backend/ai/` |
+| File editing | PyMuPDF (PDF), python-docx (Word); pdf.js / docx-preview to show files in the browser | `backend/fileedit/` |
 | Accounts & data | Supabase Auth + Postgres with Row Level Security | `supabase/migrations/` |
 
-API endpoints: `POST /api/tailor` (stream), `POST /api/parse` (stream), `POST /api/rewrite`, `GET /api/config`,
+API endpoints: `POST /api/file/extract`, `POST /api/file/tailor` (stream), `POST /api/file/render`, `POST /api/tailor` (stream), `POST /api/parse` (stream), `POST /api/rewrite`, `GET /api/config`,
 `GET /api/health`, docs at `/api/docs`.
 
 The browser talks to Supabase directly for the user's own data (RLS ensures people only see their own rows).

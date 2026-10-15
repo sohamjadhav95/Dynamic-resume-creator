@@ -92,6 +92,29 @@ export interface Layout {
   accent: string;
 }
 
+/** The uploaded PDF or Word file, kept byte-for-byte so tailoring can edit it in place. */
+export interface SourceFile {
+  type: "pdf" | "docx";
+  name: string;
+  data: string; // base64 of the original file
+  text?: string; // the file's text, line by line (for the match score)
+  font?: string; // main body font of a Word file (for a faithful browser preview)
+}
+
+export type ChangeStatus = "applied" | "too_long" | "too_short" | "changed_facts" | "unchanged" | "not_allowed";
+
+/** One line of the uploaded file that tailoring rewrote (or tried to). */
+export interface FileChange {
+  id: string;
+  section: string;
+  kind: string;
+  old: string;
+  new: string;
+  status: ChangeStatus;
+  note: string;
+  off?: boolean; // the person switched this change off: the original line is used
+}
+
 export interface Resume {
   version: 2;
   basics: Basics;
@@ -103,8 +126,8 @@ export interface Resume {
   certifications: string[];
   custom_sections: CustomSection[];
   layout: Layout;
-  doc_data?: string;
-  doc_filename?: string;
+  source?: SourceFile;
+  file_changes?: FileChange[]; // only on tailored versions of an uploaded file
 }
 
 // --------------------------------------------------------------- helpers
@@ -202,8 +225,27 @@ export function normalizeResume(input: unknown): Resume {
     location: str(b.location),
     links,
   };
-  if (raw.doc_data) base.doc_data = str(raw.doc_data);
-  if (raw.doc_filename) base.doc_filename = str(raw.doc_filename);
+  // Older builds stored a converted Word copy in `doc_data`; it was unreliable, so it is dropped.
+  const src = raw.source;
+  if (src && (src.type === "pdf" || src.type === "docx") && typeof src.data === "string" && src.data.length > 100) {
+    base.source = { type: src.type, name: str(src.name) || `resume.${src.type}`, data: src.data };
+    if (typeof src.text === "string" && src.text) base.source.text = src.text;
+    if (typeof src.font === "string" && /^[\w .-]{1,60}$/.test(src.font)) base.source.font = src.font;
+  }
+  if (Array.isArray(raw.file_changes)) {
+    base.file_changes = raw.file_changes
+      .filter((c: any) => c && typeof c.id === "string")
+      .map((c: any) => ({
+        id: c.id,
+        section: str(c.section),
+        kind: str(c.kind),
+        old: str(c.old),
+        new: str(c.new),
+        status: c.status as ChangeStatus,
+        note: str(c.note),
+        ...(c.off ? { off: true } : {}),
+      }));
+  }
   base.summary = str(raw.summary);
 
   // Skills: legacy object {category: "a, b"} or array of {category|category_name, items|skills}
@@ -319,6 +361,14 @@ export function visibleResume(r: Resume): Resume {
   return out;
 }
 
+/** Text used for the match score: an uploaded file's own text (with its active changes), else the resume fields. */
+export function matchText(r: Resume): string {
+  if (!r.source?.text) return resumeText(r);
+  let text = r.source.text.replace(/[ 	]+/g, " ");
+  for (const c of r.file_changes ?? []) if (c.status === "applied" && !c.off) text = text.split(c.old).join(c.new);
+  return text;
+}
+
 /** All text of the resume, for keyword matching. */
 export function resumeText(r: Resume): string {
   const v = visibleResume(r);
@@ -354,5 +404,25 @@ export function setPath<T>(obj: T, path: string, value: unknown): T {
 }
 
 export function isEmptyResume(r: Resume): boolean {
-  return !r.basics.name && !r.summary && !r.experience.length && !r.projects.length && !r.education.length;
+  return !r.source && !r.basics.name && !r.summary && !r.experience.length && !r.projects.length && !r.education.length;
+}
+
+/** The text changes currently switched on, in the shape the server's /api/file/render expects. */
+export function activeEdits(changes: FileChange[] | undefined): { id: string; text: string }[] {
+  return (changes ?? []).filter((c) => c.status === "applied" && !c.off).map((c) => ({ id: c.id, text: c.new }));
+}
+
+/** Base64 <-> bytes (files are kept as base64 so they can live in JSON storage). */
+export function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+export async function fileToBase64(file: Blob): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }

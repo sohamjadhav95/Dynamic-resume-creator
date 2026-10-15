@@ -1,22 +1,28 @@
 import base64
+import binascii
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
-from . import prompts
+from . import fileedit, prompts
 from .ai.providers import GeminiProvider, GroqProvider
 from .ai.router import Attempt, Event, collect, run_chain
 from .auth import Identity, get_identity
 from .config import Settings, get_settings
-from .converter import convert_pdf_to_docx_bytes, extract_docx_text, update_docx_bullets
 from .limits import consume
 from .schemas import (
-    DocTailorRequest,
+    FileFixOutput,
+    FileRenderRequest,
+    FileTailorOutput,
+    FileTailorRequest,
+    FileUploadRequest,
     ParsedResume,
     ParseRequest,
     RewriteOutput,
@@ -220,48 +226,178 @@ async def rewrite(req: RewriteRequest, request: Request):
     return {"options": options, "engine": final.data["engine"]}
 
 
-@app.post("/api/convert-doc")
-async def convert_doc(file: UploadFile = File(...)):
-    """Upload a PDF or Word (.docx) resume. Converts PDF to Word DOCX preserving layout and format."""
-    filename = file.filename or "resume.pdf"
-    content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        return JSONResponse({"error": "File size exceeds 10MB limit."}, status_code=400)
+# ------------------------------------------------------------------ uploaded files (keep the original design)
 
+
+class FileProblem(Exception):
+    def __init__(self, message: str, status: int = 422):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+
+@app.exception_handler(FileProblem)
+async def file_problem(_: Request, exc: FileProblem):
+    return JSONResponse({"error": exc.message}, status_code=exc.status)
+
+
+def decode_file(b64: str) -> bytes:
     try:
-        if filename.lower().endswith(".pdf"):
-            docx_bytes = convert_pdf_to_docx_bytes(content)
-            docx_name = filename.rsplit(".", 1)[0] + ".docx"
-        elif filename.lower().endswith(".docx"):
-            docx_bytes = content
-            docx_name = filename
-        else:
-            return JSONResponse({"error": "Please upload a PDF (.pdf) or Word (.docx) file."}, status_code=400)
-
-        extracted_text = extract_docx_text(docx_bytes)
-        b64_doc = base64.b64encode(docx_bytes).decode("utf-8")
-        return {
-            "ok": True,
-            "filename": docx_name,
-            "text": extracted_text,
-            "docx_base64": b64_doc,
-        }
-    except Exception as e:
-        log.exception("Error converting document: %r", e)
-        return JSONResponse({"error": f"Failed to convert document: {str(e)}"}, status_code=500)
+        data = base64.b64decode(b64, validate=False)
+    except (binascii.Error, ValueError) as exc:
+        raise FileProblem("That file could not be read. Please upload it again.") from exc
+    if len(data) > fileedit.MAX_FILE_BYTES:
+        raise FileProblem("That file is over 3 MB. Please upload a smaller PDF or Word file.")
+    return data
 
 
-@app.post("/api/tailor-doc")
-async def tailor_doc(req: DocTailorRequest):
-    """Updates a DOCX resume in-place with tailored bullets, keeping fonts, layout, and styles intact."""
+async def read_file(file_type: str, data: bytes) -> fileedit.Extracted:
     try:
-        docx_bytes = base64.b64decode(req.docx_base64)
-        replacements = [r.model_dump() for r in req.replacements]
-        updated_bytes = update_docx_bullets(docx_bytes, replacements)
-        return {
-            "ok": True,
-            "docx_base64": base64.b64encode(updated_bytes).decode("utf-8"),
+        return await run_in_threadpool(fileedit.extract, file_type, data)
+    except Exception as exc:
+        log.warning("file.extract_failed type=%s error=%r", file_type, exc)
+        raise FileProblem("We couldn't read this file. If it is a scanned image, paste the text instead.") from exc
+
+
+@app.post("/api/file/extract")
+async def file_extract(req: FileUploadRequest):
+    """Checks an uploaded resume and returns its text. The browser keeps the file itself."""
+    data = decode_file(req.file_base64)
+    file_type = fileedit.file_type_of(req.filename, data)
+    if not file_type:
+        raise FileProblem("Please upload a PDF (.pdf) or Word (.docx) file.")
+    extracted = await read_file(file_type, data)
+    if len(extracted.text.strip()) < 40:
+        raise FileProblem("This file has almost no readable text (it may be a scanned image). Paste the text instead.")
+    return {
+        "file_type": file_type,
+        "pages": extracted.pages,
+        "text": extracted.text,
+        "editable": len(extracted.segments),
+        "font": extracted.font,
+    }
+
+
+@app.post("/api/file/render")
+async def file_render(req: FileRenderRequest):
+    """Writes a list of text changes into the original file. No AI involved."""
+    data = decode_file(req.file_base64)
+    edits = {e.id: e.text for e in req.edits if e.text.strip()}
+    try:
+        out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, edits)
+    except Exception as exc:
+        log.exception("file.render_failed: %r", exc)
+        raise FileProblem("We couldn't update this file. Please try again.", 500) from exc
+    return {"file_base64": base64.b64encode(out).decode("ascii"), "results": [r.to_dict() for r in results]}
+
+
+@app.post("/api/file/tailor")
+async def file_tailor(req: FileTailorRequest, request: Request):
+    """AI rewrites lines of the uploaded file in place; streams progress, then the finished file."""
+    settings = get_settings()
+    identity = await get_identity(request)
+    own_key = user_key(request)
+    data = decode_file(req.file_base64)
+    extracted = await read_file(req.file_type, data)
+    if not extracted.segments:
+        raise FileProblem("We couldn't find bullet points or a summary to rewrite in this file.")
+    info = extracted.to_dict()
+    segments = {s["id"]: s for s in info["segments"]}
+    order = {item["id"]: i for i, item in enumerate(info["outline"])}
+
+    async def events() -> AsyncIterator[str]:
+        yield ": connected\n\n"
+        limited = await quota_or_none(identity, "tailor", own_key)
+        if limited:
+            yield sse(Event("limit", limited))
+            return
+        attempts = build_attempts(settings, own_key)
+        if not attempts:
+            yield sse(Event("fallback", {"reasons": ["No AI service is configured."]}))
+            return
+        started = time.monotonic()
+        final: Event | None = None
+        async for event in run_chain(
+            attempts,
+            prompts.file_tailor_system(req.options),
+            prompts.file_tailor_prompt(info, req.job_description),
+            FileTailorOutput,
+            temperature=0.3,
+            stall_seconds=settings.ai_stall_seconds,
+            total_deadline_seconds=settings.ai_total_deadline_seconds - 30,
+            heartbeat_seconds=settings.heartbeat_seconds,
+        ):
+            if event.type == "result":
+                final = event
+            else:
+                yield sse(event)
+        if final is None:
+            return  # the fallback event was already sent
+
+        ai = final.data["data"]
+        yield sse(Event("checking", {}))
+        edits = {e["id"]: e["text"] for e in ai["edits"] if e["id"] in segments}
+        out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, edits)
+
+        # One more short AI round for lines whose rewrite was too long or too short.
+        failed = [r for r in results if r.status in ("too_long", "too_short", "changed_facts")]
+        remaining = settings.ai_total_deadline_seconds - (time.monotonic() - started)
+        if failed and remaining > 45:
+            items = []
+            for r in failed:
+                seg = segments[r.id]
+                _aim, lo, hi = prompts.char_range(seg["text"], seg["min_chars"], seg["max_chars"])
+                items.append({"id": r.id, "old": r.old, "tried": r.new, "lo": lo, "hi": hi, "problem": r.note})
+            fixed: Event | None = None
+            async for event in run_chain(
+                build_attempts(settings, own_key, quick=True),
+                prompts.FILE_FIX_SYSTEM,
+                prompts.file_fix_prompt(items),
+                FileFixOutput,
+                temperature=0.4,
+                stall_seconds=40,
+                total_deadline_seconds=min(90, remaining - 15),
+                heartbeat_seconds=settings.heartbeat_seconds,
+                prefer_model=final.data["model"],
+            ):
+                if event.type == "result":
+                    fixed = event
+                elif event.type == "heartbeat":
+                    yield sse(event)
+            log.info("file.tailor_retry asked=%d answered=%s", len(items), fixed is not None)
+            if fixed is not None:
+                retry = {e["id"]: e["text"] for e in fixed.data["data"]["edits"] if e["id"] in edits}
+                if retry:
+                    edits.update(retry)
+                    out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, edits)
+
+        applied = [{"id": r.id, "text": r.new} for r in results if r.status == "applied"]
+        log.info(
+            "file.tailor type=%s segments=%d applied=%d refused=%d",
+            req.file_type,
+            len(segments),
+            len(applied),
+            sum(r.status in ("too_long", "too_short", "changed_facts") for r in results),
+        )
+        payload = {
+            "job": ai["job"],
+            "keywords": ai["keywords"],
+            "project_ideas": ai["project_ideas"],
+            "advice": ai["advice"],
+            "edits": applied,
+            "results": [r.to_dict() for r in sorted(results, key=lambda r: order.get(r.id, 9999))],
+            "file_base64": base64.b64encode(out).decode("ascii"),
         }
-    except Exception as e:
-        log.exception("Error tailoring doc: %r", e)
-        return JSONResponse({"error": f"Failed to update document: {str(e)}"}, status_code=500)
+        yield sse(
+            Event(
+                "result",
+                {
+                    "engine": final.data["engine"],
+                    "model": final.data["model"],
+                    "seconds": round(time.monotonic() - started, 1),
+                    "data": payload,
+                },
+            )
+        )
+
+    return stream_response(events())

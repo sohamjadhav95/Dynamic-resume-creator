@@ -1,46 +1,49 @@
 // Getting an existing resume into the app: file -> text -> structured resume.
 // Text extraction runs in the browser. Structuring uses AI, with a heuristic parser as backup.
 
-import { convertDocFile } from "./api";
-import { emptyResume, normalizeResume, splitList, uid, type Resume } from "./schema";
+import { extractFile } from "./api";
+import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume, type SourceFile } from "./schema";
+
+export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 
 export interface ProcessedFile {
   text: string;
-  doc_data?: string;
-  doc_filename?: string;
+  source?: SourceFile; // set when the original design can be kept and edited in place
+  warning?: string;
 }
 
+/**
+ * Reads an uploaded file. PDF and Word files are kept byte-for-byte so tailoring can edit them in
+ * place; the server checks them and returns their text. Anything else is read as text.
+ */
 export async function processResumeFile(file: File): Promise<ProcessedFile> {
   const name = file.name.toLowerCase();
-  if (file.size > 10 * 1024 * 1024) throw new Error("That file is over 10 MB. Try uploading a smaller file.");
+  if (name.endsWith(".doc")) throw new Error("Old .doc files can't be read. In Word, use Save As → .docx (or PDF) first.");
+  const isDoc = name.endsWith(".pdf") || name.endsWith(".docx") || file.type === "application/pdf";
+  if (!isDoc) return { text: await fileToText(file) };
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error("That file is over 3 MB. Try exporting a smaller PDF.");
 
-  if (name.endsWith(".json")) {
-    const text = await file.text();
-    return { text };
-  }
-
-  if (name.endsWith(".pdf") || name.endsWith(".docx") || file.type === "application/pdf") {
-    try {
-      const res = await convertDocFile(file);
-      if (res && res.text && res.docx_base64) {
-        return {
-          text: res.text,
-          doc_data: res.docx_base64,
-          doc_filename: res.filename,
-        };
-      }
-    } catch (err) {
-      console.warn("Backend document conversion failed, falling back to client-side extraction:", err);
+  const data = await fileToBase64(file);
+  try {
+    const info = await extractFile(file.name, data);
+    if (info.editable === 0) {
+      return {
+        text: info.text,
+        warning: "We couldn't find bullet points to rewrite in this file, so the app's template will be used instead.",
+      };
     }
+    return { text: info.text, source: { type: info.file_type, name: file.name, data, text: info.text, font: info.font || undefined } };
+  } catch (err) {
+    // Server unreachable or the file is unusual: fall back to reading the text in the browser.
+    console.warn("Server could not read the file, reading it in the browser instead:", err);
+    const text = await fileToText(file);
+    return { text, warning: "We couldn't keep your file's design this time, so the app's template will be used." };
   }
-
-  const text = await fileToText(file);
-  return { text };
 }
 
 export async function fileToText(file: File): Promise<string> {
   const name = file.name.toLowerCase();
-  if (file.size > 5 * 1024 * 1024) throw new Error("That file is over 5 MB. Try exporting a smaller PDF.");
+  if (file.size > 5 * 1024 * 1024) throw new Error("That file is over 5 MB. Try uploading a smaller file.");
   if (name.endsWith(".pdf") || file.type === "application/pdf") return pdfToText(file);
   if (name.endsWith(".docx")) return docxToText(file);
   if (name.endsWith(".json")) return await file.text();

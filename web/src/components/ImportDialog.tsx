@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { streamAi } from "../lib/api";
 import { processResumeFile, heuristicParse, tryJson } from "../lib/importing";
-import { normalizeResume, type Resume } from "../lib/schema";
+import { normalizeResume, type Resume, type SourceFile } from "../lib/schema";
 import { Icon } from "./Icon";
 import { Dialog, useToast } from "./ui";
 
@@ -23,19 +23,25 @@ export function ImportDialog({
   const abort = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const structure = async (raw: string, docData?: string, docFilename?: string) => {
+  const structure = async (raw: string, source?: SourceFile) => {
     setError("");
+    const finish = (r: Resume) => {
+      if (source) r.source = source;
+      onDone(r);
+    };
     const json = tryJson(raw);
     if (json) {
-      if (docData) {
-        json.doc_data = docData;
-        json.doc_filename = docFilename;
-      }
-      onDone(json);
+      finish(json);
       return;
     }
     if (raw.trim().length < 40) {
       setError("That's too short to be a resume. Paste the whole thing.");
+      return;
+    }
+    if (source) {
+      // The file itself is what gets tailored, so the quick (non-AI) parser is enough here: it only
+      // fills the optional template view. Instant, and it works even when the AI is busy.
+      finish(heuristicParse(raw));
       return;
     }
     setBusy("Reading your resume with AI…");
@@ -50,34 +56,17 @@ export function ImportDialog({
         abort.current.signal,
       );
       if (final.type === "result") {
-        const parsed = normalizeResume(final.data.data);
-        if (docData) {
-          parsed.doc_data = docData;
-          parsed.doc_filename = docFilename;
-        }
-        onDone(parsed);
+        finish(normalizeResume(final.data.data));
         return;
       }
       toast({
         message:
-          final.type === "limit"
-            ? final.data.message
-            : "AI is unavailable, so we used quick import. Please check each section.",
+          final.type === "limit" ? final.data.message : "AI is unavailable, so we used quick import. Please check each section.",
       });
-      const parsed = heuristicParse(raw);
-      if (docData) {
-        parsed.doc_data = docData;
-        parsed.doc_filename = docFilename;
-      }
-      onDone(parsed);
+      finish(heuristicParse(raw));
     } catch (e) {
       if (abort.current?.signal.aborted) {
-        const parsed = heuristicParse(raw);
-        if (docData) {
-          parsed.doc_data = docData;
-          parsed.doc_filename = docFilename;
-        }
-        onDone(parsed);
+        finish(heuristicParse(raw));
         return;
       }
       setError((e as Error).message);
@@ -89,11 +78,12 @@ export function ImportDialog({
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setError("");
-    setBusy("Reading file and preserving format…");
+    setBusy("Reading your file…");
     try {
       const proc = await processResumeFile(file);
       setBusy(null);
-      await structure(proc.text, proc.doc_data, proc.doc_filename);
+      if (proc.warning) toast({ message: proc.warning });
+      await structure(proc.text, proc.source);
     } catch (e) {
       setBusy(null);
       setError((e as Error).message);
@@ -103,7 +93,7 @@ export function ImportDialog({
   return (
     <Dialog
       title="Bring in your resume"
-      subtitle="We read it in your browser, then AI splits it into sections you can edit. Nothing is invented."
+      subtitle="Upload your PDF or Word file and we keep its exact design: tailoring only rewrites the words inside it."
       onClose={() => {
         abort.current?.abort();
         onClose();
@@ -151,7 +141,7 @@ export function ImportDialog({
           <Icon name="upload" size={28} />
           <p style={{ margin: "10px 0 4px", fontWeight: 600 }}>Drop your resume here, or click to choose</p>
           <p className="hint" style={{ margin: 0 }}>
-            PDF, Word (.docx), text, or a JSON export from this app · max 5 MB
+            PDF or Word (.docx) keeps your design · text or a JSON export from this app also work · max 3 MB
           </p>
           <input
             ref={fileInput}

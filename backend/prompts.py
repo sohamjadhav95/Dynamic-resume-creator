@@ -2,79 +2,201 @@
 
 import json
 
+from .fileedit.common import CONTACT_RE
 from .schemas import TailorOptions
 
 TONES = {
-    "balanced": "Balanced: clear impact with the right technical detail.",
-    "technical": "Technical: lead with tools, systems and measurable engineering outcomes.",
-    "leadership": "Leadership: lead with ownership, scope, people and business outcomes.",
-    "concise": "Concise: shortest clear phrasing; cut every filler word.",
+    "balanced": "Balanced: clear results with the right technical detail.",
+    "technical": "Technical: lead with tools, systems and measurable engineering results.",
+    "leadership": "Leadership: lead with ownership, team size, people and business results.",
+    "concise": "Concise: the shortest clear wording; cut every filler word.",
 }
 
 TRUTH_RULES = """
 HONESTY RULES (never break these):
 - Use ONLY facts found in the candidate's resume. Never invent employers, job titles, dates,
   degrees, certifications, projects, numbers or metrics.
-- You may rephrase, reorder, merge or drop content, and use the job's vocabulary for things the
-  candidate has clearly done (e.g. resume says "built REST APIs in Flask", job says "Python web
-  services" -> "Built Python web services (REST APIs in Flask)").
-- If a metric is not in the resume, describe the outcome without a number.
-- A skill may appear in the skills list only if the resume shows it somewhere.
+- You may reword, reorder or shorten, and use the job's words for things the candidate has clearly
+  done (resume says "built REST APIs in Flask", job says "Python web services" ->
+  "Built Python web services (REST APIs in Flask)").
+- Keep every number and metric that is already there. If there is no number, do not make one up.
+- A skill may appear only if the resume already shows it somewhere.
+"""
+
+PLAIN_LANGUAGE = """
+PLAIN, HUMAN LANGUAGE (very important):
+- Write the way a clear, confident person talks: simple everyday words and short sentences.
+  A recruiter should understand each line in one quick read.
+- Do NOT use buzzwords or fancy words such as: leverage, spearhead, orchestrate, architect (as a
+  verb), synergy, cutting-edge, state-of-the-art, robust, seamless, utilize, facilitate,
+  passionate, dynamic, innovative, results-driven, best-in-class, holistic, paradigm, empower,
+  streamline, revolutionize, meticulous, adept, proficient, "end-to-end" (unless the job uses it).
+- Prefer plain verbs: built, made, led, ran, set up, fixed, cut, grew, saved, improved, tested,
+  wrote, trained, shipped, taught, worked with.
+- Keep real names exactly as written (tools, languages, frameworks, datasets, papers, metrics):
+  recruiters and applicant tracking systems search for them.
+- Resume style: no "I", no "we". Bullets start with a verb.
+- Plain words does NOT mean spelling out symbols. Keep them exactly as written: "10+", "90%",
+  "~63x", "#3160", "2.2x", "Policy-as-Prompt", "fit_update()", "C++", "CI/CD". Never write
+  "10 plus", "90 percent" or "number 3160". Keep hyphens in words like "multi-user".
+- Never add a new fact, audience, team, tool or result. If the old line says "students", do not
+  add "and developers". Every number in the old line must appear in the new line, unchanged.
 """
 
 
-def tailor_system(options: TailorOptions) -> str:
-    length = (
-        "The final resume must fit on ONE page: keep length strictly intact, do NOT add extra bullets or skills."
-        if options.one_page
-        else "Length is flexible, but every bullet must earn its place."
-    )
+# ---------------------------------------------------------------- tailoring an uploaded file
+
+
+def file_tailor_system(options: TailorOptions) -> str:
     extra = (
-        f"\nEXTRA INSTRUCTIONS FROM THE CANDIDATE:\n{options.instructions.strip()}\n"
+        f"\nEXTRA INSTRUCTIONS FROM THE CANDIDATE (follow them unless they break a rule above):\n"
+        f"{options.instructions.strip()}\n"
         if options.instructions.strip()
         else ""
     )
     return f"""
-You are an expert resume writer and ATS (applicant tracking system) specialist.
-You receive a candidate's resume as JSON (every entry has an "id") and a target job description.
-Rewrite the resume content so it is a strong, honest match for this job.
+You tailor a candidate's resume to one job by REPLACING the wording of some lines.
+You never add new lines, bullets, skills groups or facts. The page layout must stay exactly the same.
+
+You receive the job description and the resume as a list of lines, in order:
+- [KEEP] lines are context only (names, titles, dates, headings). Never return them.
+- [EDIT id ...] lines may be reworded. You may return a new "text" for any of them.
+
+FOR EACH LINE YOU CHANGE, RETURN {{"id": "<the id>", "text": "<new words>"}}:
+- "text" replaces only the words shown after the ]. Do not include the bullet sign or the label
+  (for example "Languages:") that comes before the words; those stay as they are.
+- LENGTH IS STRICT: every [EDIT] line shows "aim N chars (min A, max B)". Your text must have
+  between A and B characters (spaces included), as close to N as you can. This is what keeps the
+  page identical. Same size, better words.
+- Bullets: one line in, one line out. Keep the same meaning and facts; make the parts that
+  matter for this job easy to see, using the job's words where they truthfully apply.
+- Skills lines: keep a comma-separated list with about the same number of items. Put the skills
+  this job asks for first. You may swap in a skill from elsewhere in the resume, never a new one.
+- Summary: rewrite it for this job (same length), saying plainly what the candidate does and why it
+  fits this role.
+- If a line is already a strong match, leave it out of "edits".
 {TRUTH_RULES}
-FORMAT & SIZE PRESERVATION (CRITICAL - KEEP RESUME LENGTH AND STRUCTURE INTACT):
-- IN-PLACE REPLACEMENT: Replace existing content in-place rather than adding new items.
-  - Bullets: For EVERY entry, return EXACTLY the same number of bullets as originally present (do not expand).
-  - Word count: At most {options.max_words_per_bullet} words per bullet (prefer 18-26 words to avoid wrapping).
-  - Skills: Keep existing category counts. SWAP / REPLACE less relevant skills with truthful keywords for target job.
+{PLAIN_LANGUAGE}
 - Tone: {TONES[options.tone]}
-- Bullets start with a strong past-tense verb (present tense for current roles) and follow
-  Action -> What/How -> Result.
-- {length}
+{extra}
+ALSO RETURN (JSON only, matching the schema):
+- job: the job title and company name from the job description ("" if not stated).
+- keywords: the 10-20 most important hard skills, tools and qualifications in the job description,
+  written as they appear in the job. importance = "must" for requirements, "nice" for nice-to-haves.
+- project_ideas: exactly 3 realistic small projects the candidate COULD build in 1-3 weekends to
+  close gaps for this job (title, stack, one plain sentence). Suggestions only.
+- advice: 0-3 short, plain tips (e.g. "The job asks for Kubernetes. Add it only if you have used it.").
+"""
+
+
+def char_range(text: str, min_chars: int, max_chars: int) -> tuple[int, int, int]:
+    """Target length for a rewrite: close to the original, inside what physically fits."""
+    n = len(text)
+    lo = max(min_chars, int(n * 0.85))
+    hi = min(max_chars, int(n * 1.1) + 2)
+    if lo > hi:
+        lo = max(int(hi * 0.9), 1)
+    aim = min(max(n, lo), hi)
+    return aim, lo, hi
+
+
+def file_tailor_prompt(extracted: dict, job_description: str) -> str:
+    segments = {s["id"]: s for s in extracted["segments"]}
+    lines: list[str] = []
+    for i, item in enumerate(extracted["outline"]):
+        seg = segments.get(item["id"])
+        if seg:
+            aim, lo, hi = char_range(seg["text"], seg["min_chars"], seg["max_chars"])
+            label = f' | label "{seg["prefix"]}"' if seg["prefix"] and seg["kind"] in ("skills", "labeled") else ""
+            lines.append(
+                f"[EDIT {seg['id']} | {seg['kind']} | {seg['section'] or 'top'}{label} | "
+                f"aim {aim} chars (min {lo}, max {hi})] {seg['text']}"
+            )
+        elif i == 0 or CONTACT_RE.search(item["text"]):
+            lines.append("[KEEP] (personal details hidden)")
+        else:
+            lines.append(f"[KEEP] {item['text']}")
+    return "RESUME LINES:\n" + "\n".join(lines) + f"\n\nTARGET JOB DESCRIPTION:\n{job_description}"
+
+
+FILE_FIX_SYSTEM = f"""
+You fix resume line rewrites that were refused. For each line you get the original text, the
+refused rewrite, why it was refused, and the allowed length. Write a new version that fixes the
+problem: same facts as the original (every number kept exactly), wording suited to the job like
+the refused rewrite, and a length INSIDE the allowed range (count characters, spaces included).
+{TRUTH_RULES}
+{PLAIN_LANGUAGE}
+Return JSON: {{"edits": [{{"id": "...", "text": "..."}}]}} with one entry per line.
+"""
+
+
+def file_fix_prompt(items: list[dict]) -> str:
+    parts = []
+    for it in items:
+        parts.append(
+            f"id: {it['id']}\nallowed: {it['lo']}-{it['hi']} characters (the refused one had {len(it['tried'])})\n"
+            f"why it was refused: {it.get('problem') or 'wrong length'}\n"
+            f"original: {it['old']}\nrefused rewrite: {it['tried']}"
+        )
+    return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------- tailoring the in-app (template) resume
+
+
+def tailor_system(options: TailorOptions) -> str:
+    extra = (
+        f"\nEXTRA INSTRUCTIONS FROM THE CANDIDATE (follow them unless they break a rule above):\n"
+        f"{options.instructions.strip()}\n"
+        if options.instructions.strip()
+        else ""
+    )
+    return f"""
+You tailor a candidate's resume to one job by REPLACING wording. You never add anything.
+You receive the resume as JSON (every entry has an "id", every bullet shows its length) and the job.
+{TRUTH_RULES}
+{PLAIN_LANGUAGE}
+SAME SIZE, BETTER WORDS (strict):
+- Return EXACTLY the same number of bullets for every entry, in the same order: bullet 1 replaces
+  bullet 1, and so on. Never add or drop a bullet.
+- Each new bullet must be about as long as the bullet it replaces: within 85%-110% of its "chars".
+- summary: same length as the original summary (within 85%-110%). If the original is empty, return "".
+- skills: the same groups with the same names, and about the same number of items in each.
+  Put the job's skills first. You may swap in a skill from elsewhere in the resume, never a new one.
+- projects: keep each project's stack items (you may reorder them for the job).
+- Tone: {TONES[options.tone]}
 {extra}
 WHAT TO RETURN (JSON only, matching the schema):
 - job: the job title and company name from the job description ("" if not stated).
-- summary: 2-3 concise sentences (30-45 words) positioning the candidate for this role.
-- skills: 3-5 groups matching the candidate's category count, replacing less relevant skills with target job keywords.
-- experience: for EVERY experience id, the tailored bullets (matching original count). Use exact ids.
-- projects: for EVERY project id, a tailored stack list and bullets (matching original count). Use exact ids.
+- summary, skills, experience (every experience id with its bullets), projects (every project id with
+  its stack and bullets). Use the exact ids.
 - project_order: all project ids, most relevant to this job first.
 - keywords: the 10-20 most important hard skills, tools and qualifications in the job description,
   written as they appear in the job. importance = "must" for requirements, "nice" for nice-to-haves.
-- project_ideas: exactly 3 realistic portfolio projects the candidate COULD build in 1-3 weekends
-  to close gaps for this job (title, stack, one-sentence pitch). These are suggestions only.
-- advice: 0-3 short, specific tips (e.g. "The job asks for Kubernetes; add it only if you have used it").
+- project_ideas: exactly 3 realistic small projects the candidate COULD build in 1-3 weekends to
+  close gaps for this job (title, stack, one plain sentence). Suggestions only.
+- advice: 0-3 short, plain tips (e.g. "The job asks for Kubernetes. Add it only if you have used it.").
 """
+
+
+def _bullets(items: list) -> list[dict]:
+    return [{"text": b, "chars": len(b)} for b in items or []]
 
 
 def compact_resume(resume: dict) -> str:
     """Only send what the model needs, to save tokens and keep ids visible."""
+    summary = resume.get("summary", "")
     keep = {
         "basics": {k: resume.get("basics", {}).get(k, "") for k in ("headline",)},
-        "summary": resume.get("summary", ""),
+        "summary": {"text": summary, "chars": len(summary)},
         "skills": [{"category": s.get("category", ""), "items": s.get("items", [])} for s in resume.get("skills", [])],
         "experience": [
-            {k: e.get(k) for k in ("id", "company", "role", "dates", "bullets")} for e in resume.get("experience", [])
+            {**{k: e.get(k) for k in ("id", "company", "role", "dates")}, "bullets": _bullets(e.get("bullets"))}
+            for e in resume.get("experience", [])
         ],
         "projects": [
-            {k: p.get(k) for k in ("id", "name", "dates", "stack", "bullets")} for p in resume.get("projects", [])
+            {**{k: p.get(k) for k in ("id", "name", "dates", "stack")}, "bullets": _bullets(p.get("bullets"))}
+            for p in resume.get("projects", [])
         ],
         "education": [{k: e.get(k) for k in ("degree", "institution", "details")} for e in resume.get("education", [])],
         "certifications": resume.get("certifications", []),
@@ -95,8 +217,8 @@ def tailor_prompt(resume: dict, job_description: str) -> str:
 
 REWRITE_MODES = {
     "shorter": "Make it noticeably shorter while keeping the key result.",
-    "impact": "Make it more impactful: strong verb, clear action, clear result.",
-    "keyword": "Naturally include the keyword '{keyword}' ONLY if it truthfully fits what the bullet describes.",
+    "impact": "Make the result clearer: plain verb, what was done, what changed because of it. Same length.",
+    "keyword": "Naturally include the keyword '{keyword}' ONLY if it truthfully fits the bullet. Same length.",
     "fix": "Fix grammar, spelling and clarity. Keep the meaning and length.",
 }
 
@@ -105,14 +227,16 @@ def rewrite_system() -> str:
     return f"""
 You rewrite single resume bullet points.
 {TRUTH_RULES}
-Return JSON: {{"options": [3 alternative rewrites]}}. Each under 35 words, no ending period needed,
-no quotation marks around the text.
+{PLAIN_LANGUAGE}
+Return JSON: {{"options": [3 alternative rewrites]}}. Unless the goal is to make it shorter, each
+option must be about as long as the original (within 90%-110% of its characters). No ending period
+needed, no quotation marks around the text.
 """
 
 
 def rewrite_prompt(text: str, mode: str, keyword: str, context: str, job_description: str) -> str:
     goal = REWRITE_MODES[mode].format(keyword=keyword)
-    parts = [f"GOAL: {goal}", f"BULLET: {text}"]
+    parts = [f"GOAL: {goal}", f"BULLET ({len(text)} chars): {text}"]
     if context:
         parts.append(f"CONTEXT (role / project): {context}")
     if job_description:

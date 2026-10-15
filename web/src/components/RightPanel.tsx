@@ -7,6 +7,7 @@ import { useMatch } from "../lib/match";
 import { clone, getPath, setPath, uid } from "../lib/schema";
 import { useSelection } from "../lib/selection";
 import { MASTER, useStore } from "../lib/store";
+import { ChangesCard, HowItWorks } from "./Changes";
 import { Icon } from "./Icon";
 import { Dialog, useToast } from "./ui";
 
@@ -16,6 +17,7 @@ export interface TailorProgress {
   provider: string;
   thought: string;
   chars: number;
+  fileMode?: boolean; // tailoring an uploaded file (no offline "quick version" for files)
 }
 
 export function RightPanel({
@@ -34,10 +36,12 @@ export function RightPanel({
   return (
     <div className="stack" style={{ padding: 18, gap: 16 }}>
       {progress && <ProgressCard progress={progress} onQuick={onQuick} onCancel={onCancel} />}
+      {version && <ChangesCard />}
       <MatchCard match={match} jd={jd} />
       <RewriteCard jd={jd} missing={match?.matches.filter((m) => !m.found).map((m) => m.term) ?? []} />
       {version && version.insights.project_ideas.length > 0 && <IdeasCard />}
       {version && (version.insights.advice.length > 0 || version.insights.removed.length > 0) && <AdviceCard />}
+      <HowItWorks open={state.activeId === MASTER && !version && !jd.trim()} />
       {state.activeId === MASTER && !jd.trim() && !progress && (
         <div className="empty-state">
           <Icon name="target" size={22} />
@@ -66,7 +70,10 @@ function ProgressCard({ progress, onQuick, onCancel }: { progress: TailorProgres
           ? `${progress.provider} is busy — switching to backup AI`
           : `Writing with ${progress.provider || "AI"}${progress.chars ? ` · ${Math.round(progress.chars / 5)} words` : ""}`,
     },
-    { key: ["finishing"], label: "Fact-checking and laying out your page" },
+    {
+      key: ["finishing"],
+      label: progress.fileMode ? "Checking facts and fitting the words into your file" : "Fact-checking and laying out your page",
+    },
   ];
   const order: TailorProgress["stage"][] = ["sending", "writing", "finishing"];
   const current = order.indexOf(progress.stage === "switching" ? "writing" : progress.stage);
@@ -96,9 +103,11 @@ function ProgressCard({ progress, onQuick, onCancel }: { progress: TailorProgres
         </p>
       )}
       <div className="row wrap">
-        <button className="btn btn-sm" onClick={onQuick} title="Skip the AI and reorder your resume for this job instantly">
-          <Icon name="bolt" size={15} /> Use quick version now
-        </button>
+        {!progress.fileMode && (
+          <button className="btn btn-sm" onClick={onQuick} title="Skip the AI and reorder your resume for this job instantly">
+            <Icon name="bolt" size={15} /> Use quick version now
+          </button>
+        )}
         <button className="btn btn-ghost btn-sm" onClick={onCancel}>
           Cancel
         </button>
@@ -145,6 +154,7 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
   const toast = useToast();
   const [asking, setAsking] = useState<KeywordMatch | null>(null);
   const [showJd, setShowJd] = useState(false);
+  const [replaceTarget, setReplaceTarget] = useState<string>(""); // hooks must run before any early return
   if (!match) return null;
 
   const hard = match.matches.filter((m) => !m.soft);
@@ -154,7 +164,6 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
   const verdict =
     match.score >= 80 ? "Strong match" : match.score >= 60 ? "Good match" : match.score >= 40 ? "Partial match" : "Weak match";
 
-  const [replaceTarget, setReplaceTarget] = useState<string>("");
 
   const allExistingSkills = resume.skills.flatMap((g) =>
     g.items.map((it) => ({ skill: it, category: g.category }))

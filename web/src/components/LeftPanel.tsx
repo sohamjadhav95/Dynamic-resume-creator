@@ -66,24 +66,6 @@ function JobCard({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
             <Icon name="settings" size={15} /> AI options
           </summary>
           <div className="body">
-            <div className="options-grid">
-              <label className="field">
-                <span className="label">Bullets per job</span>
-                <select className="select" value={o.bullets_per_role} onChange={(e) => setOpt({ bullets_per_role: +e.target.value })}>
-                  {[2, 3, 4, 5].map((n) => (
-                    <option key={n}>{n}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span className="label">Bullets per project</span>
-                <select className="select" value={o.bullets_per_project} onChange={(e) => setOpt({ bullets_per_project: +e.target.value })}>
-                  {[1, 2, 3].map((n) => (
-                    <option key={n}>{n}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
             <label className="field">
               <span className="label">Tone</span>
               <select className="select" value={o.tone} onChange={(e) => setOpt({ tone: e.target.value as typeof o.tone })}>
@@ -92,9 +74,6 @@ function JobCard({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
                 <option value="leadership">Leadership — ownership & outcomes</option>
                 <option value="concise">Concise — shortest phrasing</option>
               </select>
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={o.one_page} onChange={(e) => setOpt({ one_page: e.target.checked })} /> Keep it to one page
             </label>
             <label className="field">
               <span className="label">Anything else? (optional)</span>
@@ -115,7 +94,17 @@ function JobCard({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
           {!busy && <span className="kbd hide-sm">Ctrl ↵</span>}
         </button>
         <p className="hint" style={{ margin: 0 }}>
-          Tailoring starts from your <strong>master profile</strong> and saves a new version. Your master stays untouched.
+          {state.ws.master.source ? (
+            <>
+              Tailoring rewords the lines inside <strong>your own file</strong>. Same design, same length, same page
+              count. Your original stays untouched.
+            </>
+          ) : (
+            <>
+              Tailoring rewords your <strong>master profile</strong> into a new version: same bullets, same length.
+              Your master stays untouched.
+            </>
+          )}
         </p>
       </div>
     </section>

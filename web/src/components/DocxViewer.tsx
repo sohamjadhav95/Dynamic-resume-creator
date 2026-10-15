@@ -1,90 +1,54 @@
 import { useEffect, useRef, useState } from "react";
-import { renderAsync } from "docx-preview";
+import { base64ToBytes } from "../lib/schema";
 
-interface DocxViewerProps {
-  docData: Blob | ArrayBuffer | string;
-  zoom?: number;
-}
-
-export function DocxViewer({ docData, zoom = 1 }: DocxViewerProps) {
+/** Browser preview of a Word file (base64). Word's own layout can differ slightly. */
+export function DocxViewer({ docData, zoom = 1, font }: { docData: string; zoom?: number; font?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     let active = true;
-    const render = async () => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      setLoading(true);
-      setError(null);
-      container.innerHTML = "";
-
-      try {
-        let buffer: ArrayBuffer;
-        if (typeof docData === "string") {
-          // base64 string
-          const binary = atob(docData);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          buffer = bytes.buffer;
-        } else if (docData instanceof Blob) {
-          buffer = await docData.arrayBuffer();
-        } else {
-          buffer = docData;
-        }
-
-        if (!active) return;
-
-        await renderAsync(buffer, container, undefined, {
+    const container = containerRef.current;
+    if (!container) return;
+    setStatus("loading");
+    container.innerHTML = "";
+    const bytes = base64ToBytes(docData);
+    import("docx-preview")
+      .then(({ renderAsync }) =>
+        renderAsync(bytes.buffer as ArrayBuffer, container, undefined, {
           className: "docx-page",
           inWrapper: true,
           ignoreWidth: false,
           ignoreHeight: false,
           breakPages: true,
           useBase64URL: true,
-        });
-
-        if (active) setLoading(false);
-      } catch (err) {
-        console.error("Error rendering docx:", err);
-        if (active) {
-          setError("Could not render Word preview. You can still download the document directly.");
-          setLoading(false);
-        }
-      }
-    };
-
-    render();
+        }),
+      )
+      .then(() => active && setStatus("ready"))
+      .catch((err) => {
+        console.error("Word preview failed", err);
+        if (active) setStatus("error");
+      });
     return () => {
       active = false;
     };
   }, [docData]);
 
   return (
-    <div className="docx-viewer-root" style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-      {loading && (
-        <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
-          Loading document preview…
-        </div>
+    <div className="docx-viewer-root">
+      {status === "loading" && <div className="file-status">Loading your file…</div>}
+      {status === "error" && (
+        <div className="file-status error">Couldn't show the preview. You can still download the file.</div>
       )}
-      {error && (
-        <div style={{ padding: 30, textAlign: "center", color: "var(--accent-wine)" }}>
-          {error}
-        </div>
+      {font && (
+        // The preview library ignores Word's default "Normal" font and falls back to the theme font,
+        // which changes how lines wrap. Point the theme fonts at the document's real body font.
+        <style>{`.docx-container .docx-wrapper { --docx-minorHAnsi-font: "${font}", Arial, sans-serif !important; }`}</style>
       )}
       <div
         ref={containerRef}
         className="docx-container"
-        style={{
-          transform: `scale(${zoom})`,
-          transformOrigin: "top center",
-          transition: "transform 0.15s ease",
-          display: loading || error ? "none" : "block",
-        }}
+        style={{ zoom, display: status === "error" ? "none" : "block" }}
       />
     </div>
   );

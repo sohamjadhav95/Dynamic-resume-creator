@@ -11,11 +11,11 @@ import { useLayoutMode, useToast } from "./components/ui";
 import { Welcome } from "./components/Welcome";
 import sample from "./data/sample-resume.json";
 import { SAMPLE_JOB } from "./data/sample-job";
-import { ApiError, getConfig, streamAi, tailorDoc, warmUp } from "./lib/api";
+import { ApiError, getConfig, streamAi, warmUp, type StreamEvent } from "./lib/api";
+import { rememberFile } from "./lib/files";
 import { guessJob } from "./lib/keywords";
 import { computeMatch } from "./lib/match";
 import { applyTheme, loadPrefs, savePrefs, type Theme } from "./lib/prefs";
-import { generateDocxBlob } from "./lib/docxExport";
 import { emptyResume, isEmptyResume, normalizeResume, uuid, visibleResume, type Resume } from "./lib/schema";
 import {
   clearLocal,
@@ -32,7 +32,7 @@ import {
 } from "./lib/storage";
 import { MASTER, useStore } from "./lib/store";
 import { signOut, watchSession } from "./lib/supabase";
-import { applyAiResult, collectBulletReplacements, offlineTailor, type Insights } from "./lib/tailor";
+import { applyAiResult, applyFileChanges, offlineTailor, type FileTailorResult, type Insights } from "./lib/tailor";
 
 type Dialog = null | "auth" | "versions" | "settings" | "import-upload" | "import-paste";
 type Mode = { kind: "guest" } | { kind: "cloud"; userId: string } | { kind: "cloud-offline"; userId: string };
@@ -181,35 +181,92 @@ export function App() {
     }
     if (progress) return;
     const opts = state.options;
-    setProgress({ startedAt: Date.now(), stage: "sending", provider: "", thought: "", chars: 0 });
+    const fileMode = !!master.source;
+    setProgress({ startedAt: Date.now(), stage: "sending", provider: "", thought: "", chars: 0, fileMode });
     if (layout === "narrow") setMobileTab("insights");
     if (layout === "medium") setSideTab("insights");
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     quickRef.current = false;
 
+    const onEvent = (e: StreamEvent) => {
+      setProgress((p) => {
+        if (!p) return p;
+        if (e.type === "stage")
+          return { ...p, stage: p.provider && p.provider !== e.data.label ? "switching" : "writing", provider: e.data.label, chars: 0 };
+        if (e.type === "thought") {
+          const sentence = e.data.text.replace(/\*\*/g, "").split(/\n+/).filter(Boolean).pop() ?? "";
+          return { ...p, stage: "writing", thought: sentence.slice(0, 160) };
+        }
+        if (e.type === "progress") return { ...p, stage: "writing", chars: e.data.chars };
+        if (e.type === "checking") return { ...p, stage: "finishing" };
+        return p;
+      });
+    };
+
+    // Uploaded PDF / Word file: the server rewrites lines inside the file itself.
+    if (master.source) {
+      const source = master.source;
+      try {
+        const final = await streamAi(
+          "/api/file/tailor",
+          {
+            file_type: source.type,
+            file_base64: source.data,
+            job_description: jd,
+            options: { tone: opts.tone, instructions: opts.instructions },
+          },
+          onEvent,
+          ctrl.signal,
+        );
+        if (final.type !== "result") {
+          toast({
+            message:
+              final.type === "limit"
+                ? final.data.message
+                : "The AI is busy right now, so your file was not changed. Please try again in a minute.",
+            kind: "error",
+          });
+          return;
+        }
+        const result = final.data.data as FileTailorResult;
+        const resume = applyFileChanges(master, result.results);
+        rememberFile(resume, result.file_base64);
+        const insights: Insights = {
+          job: result.job,
+          keywords: result.keywords,
+          project_ideas: result.project_ideas.slice(0, 3),
+          advice: result.advice.slice(0, 3),
+          removed: [],
+          engine: final.data.engine,
+          model: final.data.model,
+        };
+        const applied = result.results.filter((r) => r.status === "applied").length;
+        saveVersion(
+          { resume, insights },
+          jd,
+          applied
+            ? `Done: ${applied} line${applied === 1 ? "" : "s"} reworded inside your file. Same layout. See the changes on the right.`
+            : "The AI didn't find lines worth changing for this job, so your file is unchanged.",
+        );
+      } catch (err) {
+        if (!ctrl.signal.aborted) {
+          toast({
+            message: err instanceof ApiError ? err.message : "Something went wrong, so your file was not changed. Please try again.",
+            kind: "error",
+          });
+        }
+      } finally {
+        setProgress(null);
+      }
+      return;
+    }
+
     let outcome: { resume: Resume; insights: Insights };
     let note = "";
     const quick = () => offlineTailor(master, jd, opts);
     try {
-      const final = await streamAi(
-        "/api/tailor",
-        { resume: aiPayload(master), job_description: jd, options: opts },
-        (e) => {
-          setProgress((p) => {
-            if (!p) return p;
-            if (e.type === "stage")
-              return { ...p, stage: p.provider && p.provider !== e.data.label ? "switching" : "writing", provider: e.data.label, chars: 0 };
-            if (e.type === "thought") {
-              const sentence = e.data.text.replace(/\*\*/g, "").split(/\n+/).filter(Boolean).pop() ?? "";
-              return { ...p, stage: "writing", thought: sentence.slice(0, 160) };
-            }
-            if (e.type === "progress") return { ...p, stage: "writing", chars: e.data.chars };
-            return p;
-          });
-        },
-        ctrl.signal,
-      );
+      const final = await streamAi("/api/tailor", { resume: aiPayload(master), job_description: jd, options: opts }, onEvent, ctrl.signal);
       if (final.type === "result") {
         setProgress((p) => p && { ...p, stage: "finishing" });
         outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model);
@@ -232,42 +289,6 @@ export function App() {
       }
       outcome = quick();
       note = quickRef.current ? "Quick version ready. You can tailor again with AI any time." : "Something went wrong with AI, so we made a quick version.";
-    }
-
-    if (master.doc_data) {
-      try {
-        const reps = collectBulletReplacements(master, outcome.resume);
-        if (reps.length > 0) {
-          const updatedDoc = await tailorDoc(master.doc_data, reps);
-          if (updatedDoc) {
-            outcome.resume.doc_data = updatedDoc;
-            outcome.resume.doc_filename = master.doc_filename;
-          }
-        } else {
-          outcome.resume.doc_data = master.doc_data;
-          outcome.resume.doc_filename = master.doc_filename;
-        }
-      } catch (e) {
-        console.warn("Could not update docx in-place:", e);
-      }
-    } else {
-      try {
-        const blob = await generateDocxBlob(outcome.resume);
-        const reader = new FileReader();
-        const b64 = await new Promise<string>((resolve) => {
-          reader.onloadend = () => {
-            const res = reader.result as string;
-            resolve(res.split(",")[1] || "");
-          };
-          reader.readAsDataURL(blob);
-        });
-        if (b64) {
-          outcome.resume.doc_data = b64;
-          outcome.resume.doc_filename = `${outcome.resume.basics.name || "Resume"}.docx`;
-        }
-      } catch (err) {
-        console.warn("Could not generate docx for tailored version:", err);
-      }
     }
 
     try {

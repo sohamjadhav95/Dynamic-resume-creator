@@ -22,6 +22,28 @@ from .providers import Provider, ProviderError
 log = logging.getLogger("resume.ai")
 
 MIN_ATTEMPT_SECONDS = 15  # don't start an attempt that can't realistically finish
+BUSY_WAIT_SECONDS = 4  # pause before retrying a model that answered "503 busy"
+COOLDOWN_SECONDS = 90  # a model that was busy or rate-limited is tried last for this long
+
+# (provider, model) -> time until which it is "cooling down". Lives as long as the server process,
+# so requests handled by the same warm instance learn from each other.
+_cooldown: dict[tuple[str, str], float] = {}
+
+
+def note_busy(provider: str, model: str) -> None:
+    _cooldown[(provider, model)] = time.monotonic() + COOLDOWN_SECONDS
+
+
+def ordered_models(provider: str, models: list[str], prefer: str | None = None) -> list[str]:
+    """Healthy models first (keeping the configured order), then ones that were busy a moment ago."""
+    now = time.monotonic()
+    healthy = [m for m in models if _cooldown.get((provider, m), 0) <= now]
+    cooling = [m for m in models if m not in healthy]
+    ordered = healthy + cooling
+    if prefer in ordered:
+        ordered.remove(prefer)
+        ordered.insert(0, prefer)
+    return ordered
 
 
 @dataclass
@@ -63,6 +85,8 @@ async def run_chain(
     total_deadline_seconds: float = 285,
     heartbeat_seconds: float = 10,
     min_attempt_seconds: float = MIN_ATTEMPT_SECONDS,
+    busy_wait: float = BUSY_WAIT_SECONDS,
+    prefer_model: str | None = None,
 ) -> AsyncIterator[Event]:
     started = time.monotonic()
     deadline = started + total_deadline_seconds
@@ -72,24 +96,32 @@ async def run_chain(
         provider = attempt.provider
         provider_deadline = min(time.monotonic() + attempt.budget_seconds, deadline)
 
-        for model in attempt.models:
+        for model in ordered_models(provider.name, attempt.models, prefer_model):
             if provider_deadline - time.monotonic() < min_attempt_seconds:
                 break
             yield Event("stage", {"provider": provider.name, "label": provider.label, "model": model})
-            outcome: dict = {}
-            async for event in _run_one(
-                provider,
-                model,
-                system,
-                prompt,
-                schema,
-                temperature,
-                stall_seconds=stall_seconds,
-                deadline=provider_deadline,
-                heartbeat_seconds=heartbeat_seconds,
-                outcome=outcome,
-            ):
-                yield event
+            for try_no in range(2):
+                outcome: dict = {}
+                async for event in _run_one(
+                    provider,
+                    model,
+                    system,
+                    prompt,
+                    schema,
+                    temperature,
+                    stall_seconds=stall_seconds,
+                    deadline=provider_deadline,
+                    heartbeat_seconds=heartbeat_seconds,
+                    outcome=outcome,
+                ):
+                    yield event
+                busy = outcome.get("status") == 503 and "result" not in outcome
+                if not busy or try_no == 1 or provider_deadline - time.monotonic() < min_attempt_seconds + busy_wait:
+                    break
+                # "Busy right now" is usually over in seconds: wait once before using a weaker model.
+                log.info("ai.busy_retry provider=%s model=%s wait=%ss", provider.name, model, busy_wait)
+                yield Event("heartbeat", {"waiting": 0})
+                await asyncio.sleep(busy_wait)
             if "result" in outcome:
                 elapsed = round(time.monotonic() - started, 1)
                 log.info("ai.success provider=%s model=%s seconds=%s", provider.name, model, elapsed)
@@ -100,6 +132,8 @@ async def run_chain(
                 return
             reason = outcome.get("reason", "unknown error")
             reasons.append(reason)
+            if outcome.get("status") in (429, 503) or "no response" in reason:
+                note_busy(provider.name, model)
             log.warning("ai.attempt_failed provider=%s model=%s reason=%s", provider.name, model, reason)
             if not outcome.get("retry_same_provider"):
                 break
@@ -150,7 +184,7 @@ async def _run_one(
             except StopAsyncIteration:
                 break
             except ProviderError as exc:
-                outcome.update(reason=str(exc), retry_same_provider=exc.retry_same_provider)
+                outcome.update(reason=str(exc), retry_same_provider=exc.retry_same_provider, status=exc.status)
                 return
             except Exception as exc:  # unexpected SDK error: treat like a provider failure
                 outcome.update(reason=f"{type(exc).__name__}: {exc}", retry_same_provider=True)

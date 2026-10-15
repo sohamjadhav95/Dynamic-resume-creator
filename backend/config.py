@@ -44,7 +44,7 @@ class Settings:
 
     # Timing. Slow is NOT a failure: we only give up on a provider when it errors,
     # stops sending anything for `ai_stall_seconds`, or uses up its whole budget.
-    ai_stall_seconds: float = 90
+    ai_stall_seconds: float = 45
     ai_gemini_budget_seconds: float = 240
     ai_groq_budget_seconds: float = 40
     ai_total_deadline_seconds: float = 285  # Vercel Hobby hard limit is 300s
@@ -64,7 +64,7 @@ def get_settings() -> Settings:
         gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
         gemini_models=_list(
             "GEMINI_MODELS",
-            "gemini-3.6-flash,gemini-3.5-flash-lite,gemini-3.5-flash",
+            "gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite",
         ),
         groq_api_key=os.environ.get("GROQ_API_KEY", ""),
         groq_models=_list("GROQ_MODELS", "openai/gpt-oss-120b,openai/gpt-oss-20b"),
@@ -75,7 +75,7 @@ def get_settings() -> Settings:
         or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""),
         allowed_origins=_list("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"),
         ip_salt=os.environ.get("IP_HASH_SALT", "change-me"),
-        ai_stall_seconds=_float("AI_STALL_SECONDS", 90),
+        ai_stall_seconds=_float("AI_STALL_SECONDS", 45),
         ai_gemini_budget_seconds=_float("AI_GEMINI_BUDGET_SECONDS", 240),
         ai_groq_budget_seconds=_float("AI_GROQ_BUDGET_SECONDS", 40),
         ai_total_deadline_seconds=_float("AI_TOTAL_DEADLINE_SECONDS", 285),

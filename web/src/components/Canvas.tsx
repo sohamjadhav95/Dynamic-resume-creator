@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { downloadDocxBlob, generateDocxBlob } from "../lib/docxExport";
+import { downloadBase64, useResumeFile } from "../lib/files";
 import { loadPrefs, savePrefs } from "../lib/prefs";
 import type { Resume } from "../lib/schema";
 import { useStore } from "../lib/store";
-import { DocxViewer } from "./DocxViewer";
+import { FileView } from "./FileView";
 import { Icon } from "./Icon";
 import { ResumePage } from "./ResumePage";
 
@@ -30,14 +30,9 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
   const [zoom, setZoom] = useState(() => loadPrefs().zoom);
   const [fitZoom, setFitZoom] = useState(1);
   const fitting = useRef(false);
-  const [viewMode, setViewMode] = useState<"template" | "doc">(() => (resume.doc_data ? "doc" : "template"));
-  const [generatedDocBlob, setGeneratedDocBlob] = useState<Blob | null>(null);
-
-  useEffect(() => {
-    if (viewMode === "doc" && !resume.doc_data) {
-      generateDocxBlob(resume).then(setGeneratedDocBlob);
-    }
-  }, [viewMode, resume]);
+  const [preferTemplate, setPreferTemplate] = useState(false);
+  const viewMode: "file" | "template" = resume.source && !preferTemplate ? "file" : "template";
+  const file = useResumeFile(resume);
 
   const measure = useCallback(() => {
     const sheet = sheetRef.current;
@@ -55,7 +50,7 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
     setGuides(Array.from({ length: pages - 1 }, (_, i) => (i + 1) * pageH));
   }, []);
 
-  useLayoutEffect(measure, [resume, measure]);
+  useLayoutEffect(measure, [resume, measure, viewMode]);
   useEffect(() => {
     const sheet = sheetRef.current;
     if (!sheet) return;
@@ -63,7 +58,7 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
     ro.observe(sheet);
     document.fonts?.ready.then(measure);
     return () => ro.disconnect();
-  }, [measure]);
+  }, [measure, viewMode]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -94,25 +89,23 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
     savePrefs({ zoom: z });
   };
 
-  const handleDownloadDocx = async () => {
-    try {
-      const who = resume.basics.name || "Resume";
-      const filename = `${who} Resume`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const baseName = () => {
+    const who = resume.basics.name || resume.source?.name.replace(/\.(pdf|docx)$/i, "") || "Resume";
+    const forJob = title.startsWith("Tailored for ") ? ` - ${title.slice(13)}` : "";
+    return `${who}${forJob}`.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+  };
 
-      if (resume.doc_data) {
-        const binary = atob(resume.doc_data);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const blob = new Blob([bytes], {
-          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        });
-        downloadDocxBlob(blob, filename);
-      } else {
-        const blob = await generateDocxBlob(resume);
-        downloadDocxBlob(blob, filename);
-      }
+  const downloadFile = () => {
+    if (!resume.source || !file.data) return;
+    downloadBase64(file.data, `${baseName()}.${resume.source.type}`, resume.source.type);
+  };
+
+  const downloadTemplateDocx = async () => {
+    try {
+      const { downloadDocxBlob, generateDocxBlob } = await import("../lib/docxExport");
+      downloadDocxBlob(await generateDocxBlob(resume), baseName().replace(/[^a-zA-Z0-9_ -]/g, "_"));
     } catch (err) {
-      console.error("Failed to download docx:", err);
+      console.error("Failed to create the Word file:", err);
     }
   };
 
@@ -127,26 +120,28 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
         <div className="doc-title grow" title={title}>
           {title}
         </div>
-        <div className="segmented" role="tablist" aria-label="Preview Mode" style={{ margin: "0 4px" }}>
-          <button
-            role="tab"
-            aria-selected={viewMode === "doc"}
-            onClick={() => setViewMode("doc")}
-            className="sm"
-            title="Read resume in exact Word document format"
-          >
-            Word (.docx) View
-          </button>
-          <button
-            role="tab"
-            aria-selected={viewMode === "template"}
-            onClick={() => setViewMode("template")}
-            className="sm"
-            title="Interactive click-to-edit template"
-          >
-            Interactive Edit
-          </button>
-        </div>
+        {resume.source && (
+          <div className="segmented" role="tablist" aria-label="What to show" style={{ margin: "0 4px" }}>
+            <button
+              role="tab"
+              aria-selected={viewMode === "file"}
+              onClick={() => setPreferTemplate(false)}
+              className="sm"
+              title="Your own file, with your design"
+            >
+              Your file
+            </button>
+            <button
+              role="tab"
+              aria-selected={viewMode === "template"}
+              onClick={() => setPreferTemplate(true)}
+              className="sm"
+              title="The app's click-to-edit template"
+            >
+              Template
+            </button>
+          </div>
+        )}
         {viewMode === "template" && (
           <span className="meter" aria-live="polite">
             {info.fits ? (
@@ -184,20 +179,42 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
             +
           </button>
         </div>
-        <button className="btn btn-sm" onClick={handleDownloadDocx} title="Download exact Word document (.docx)">
-          <Icon name="page" size={15} /> Word (.docx)
-        </button>
-        <button className="btn btn-ink btn-sm" onClick={onPrint} title="Print or save as PDF">
-          <Icon name="download" size={16} /> PDF
-        </button>
+        {viewMode === "file" && resume.source ? (
+          <button
+            className="btn btn-ink btn-sm"
+            onClick={downloadFile}
+            disabled={!file.data}
+            title={resume.source.type === "pdf" ? "Download your PDF" : "Download your Word file"}
+          >
+            <Icon name="download" size={16} /> {resume.source.type === "pdf" ? "PDF" : "Word"}
+          </button>
+        ) : (
+          <>
+            <button className="btn btn-sm hide-sm" onClick={downloadTemplateDocx} title="Download as a Word file (.docx)">
+              <Icon name="page" size={15} /> Word
+            </button>
+            <button className="btn btn-ink btn-sm" onClick={onPrint} title="Print or save as PDF">
+              <Icon name="download" size={16} /> PDF
+            </button>
+          </>
+        )}
       </div>
       <div className="canvas" ref={canvasRef}>
-        {viewMode === "doc" ? (
-          <div className="doc-preview-wrapper" style={{ width: "100%", padding: "20px 0", overflowY: "auto" }}>
-            <DocxViewer
-              docData={resume.doc_data || generatedDocBlob || ""}
-              zoom={effectiveZoom}
-            />
+        {viewMode === "file" && resume.source ? (
+          <div className="file-wrap">
+            {resume.source.type === "docx" && (
+              <p className="file-tip no-print">
+                Preview only: Word may show small spacing differences. For a PDF, open the downloaded file in Word and
+                choose <strong>File → Save as PDF</strong>.
+              </p>
+            )}
+            {file.data ? (
+              <FileView type={resume.source.type} data={file.data} zoom={effectiveZoom} font={resume.source.font} />
+            ) : (
+              <div className={`file-status ${file.error ? "error" : ""}`}>
+                {file.error || "Writing the changes into your file…"}
+              </div>
+            )}
           </div>
         ) : (
           <div className="print-root" style={{ zoom: effectiveZoom }}>

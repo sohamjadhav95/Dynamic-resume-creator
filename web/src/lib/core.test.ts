@@ -4,9 +4,17 @@ import sample from "../data/sample-resume.json";
 import { SAMPLE_JOB } from "../data/sample-job";
 import { heuristicParse, tryJson } from "./importing";
 import { containsTerm, extractKeywords, guessJob, highlight, matchKeywords, matchScore } from "./keywords";
-import { normalizeResume, resumeText, setPath, splitList, uuid, visibleResume } from "./schema";
+import { activeEdits, normalizeResume, resumeText, setPath, splitList, uuid, visibleResume, type FileChange } from "./schema";
 import { _reducerForTests as reducer, initialState, activeResume } from "./store";
-import { applyAiResult, isSupported, offlineTailor, type AiTailorOutput } from "./tailor";
+import {
+  acceptRewrite,
+  applyAiResult,
+  applyFileChanges,
+  isSupported,
+  offlineTailor,
+  updateFileChange,
+  type AiTailorOutput,
+} from "./tailor";
 
 const legacy = JSON.parse(readFileSync(new URL("../../../examples/legacy_master_resume.json", import.meta.url), "utf8"));
 
@@ -110,10 +118,11 @@ describe("tailoring", () => {
   it("truth check drops skills the master never mentions", () => {
     expect(isSupported("Kubernetes", resumeText(master))).toBe(true);
     expect(isSupported("Rust", resumeText(master))).toBe(false);
+    const first = master.experience[0].bullets;
     const ai: AiTailorOutput = {
       job: { title: "Backend Engineer", company: "Acme" },
       summary: "New summary.",
-      skills: [{ category: "Backend", items: ["Go", "Kafka", "Rust", "PostgreSQL"] }],
+      skills: [{ category: master.skills[0].category, items: ["Go", "Kafka", "Rust", "PostgreSQL"] }],
       experience: [{ id: master.experience[0].id, bullets: ["Rewritten bullet"] }, { id: "made-up", bullets: ["x"] }],
       projects: [{ id: master.projects[1].id, stack: ["Go", "Haskell"], bullets: ["Proj bullet"] }],
       project_order: [master.projects[1].id, master.projects[0].id],
@@ -122,13 +131,49 @@ describe("tailoring", () => {
       advice: [],
     };
     const { resume, insights } = applyAiResult(master, ai, "gemini");
-    expect(resume.skills[0].items).toEqual(["Go", "Kafka", "PostgreSQL"]);
     expect(insights.removed).toEqual(["Rust"]);
+    expect(resume.skills[0].items).not.toContain("Rust");
     expect(resume.experience.length).toBe(master.experience.length); // unknown ids ignored
-    expect(resume.experience[0].bullets).toEqual(["Rewritten bullet"]);
+    // replace, never add or drop: same number of bullets; a much shorter rewrite keeps the original
+    expect(resume.experience[0].bullets).toEqual(first);
     expect(resume.experience[0].company).toBe(master.experience[0].company);
     expect(resume.projects[0].id).toBe(master.projects[1].id);
-    expect(resume.projects[0].stack).toEqual(["Go"]);
+    expect(resume.projects[0].stack).toEqual(master.projects[1].stack); // a made-up tool is not allowed in
+  });
+
+  it("accepts same-size rewrites that keep every number, refuses the rest", () => {
+    const old = "Cut AWS spend by 30% by moving batch jobs from always-on EC2 to scheduled Airflow tasks on spot instances.";
+    const whole = resumeText(master);
+    const good = "Cut AWS costs by 30% by moving batch jobs off always-on EC2 servers onto scheduled Airflow tasks on spot.";
+    expect(acceptRewrite(old, good, whole)).toEqual({ text: good, ok: true });
+    const dropped = "Cut AWS costs a lot by moving batch jobs off always-on EC2 servers onto scheduled Airflow spot tasks.";
+    expect(acceptRewrite(old, dropped, whole).ok).toBe(false);
+    const invented = "Cut AWS spend by 30% for 12 teams by moving batch jobs from EC2 to scheduled Airflow tasks on spot.";
+    expect(acceptRewrite(old, invented, whole).ok).toBe(false);
+    const longer = good + " This also made the nightly reports finish much faster for everyone on the data team.";
+    expect(acceptRewrite(old, longer, whole)).toEqual({ text: old, ok: false });
+  });
+
+  it("file changes can be switched off and back on", () => {
+    const bullet = master.experience[0].bullets[1];
+    const change: FileChange = {
+      id: "p0-9",
+      section: "EXPERIENCE",
+      kind: "bullet",
+      old: bullet,
+      new: "Cut AWS costs by 30% by moving batch jobs off always-on EC2 servers onto scheduled Airflow tasks on spot.",
+      status: "applied",
+      note: "",
+    };
+    const tailored = applyFileChanges(master, [change, { ...change, id: "p0-10", status: "unchanged" }]);
+    expect(tailored.file_changes?.length).toBe(1);
+    expect(tailored.experience[0].bullets[1]).toBe(change.new);
+    expect(activeEdits(tailored.file_changes)).toEqual([{ id: "p0-9", text: change.new }]);
+    const off = updateFileChange(tailored, "p0-9", { off: true });
+    expect(off.experience[0].bullets[1]).toBe(bullet);
+    expect(activeEdits(off.file_changes)).toEqual([]);
+    const back = updateFileChange(off, "p0-9", { off: false });
+    expect(back.experience[0].bullets[1]).toBe(change.new);
   });
 });
 

@@ -3,6 +3,7 @@ import json
 
 from pydantic import BaseModel
 
+from backend.ai import router
 from backend.ai.providers import Chunk, ProviderError
 from backend.ai.router import Attempt, collect, parse_json_text, run_chain
 
@@ -130,3 +131,10 @@ async def test_unexpected_exception_is_contained():
 def test_parse_json_text_handles_fences_and_noise():
     assert parse_json_text('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json_text('Here you go: {"a": 2} thanks') == {"a": 2}
+
+
+def test_busy_models_are_tried_last_for_a_while():
+    router.note_busy("gemini", "fast")
+    assert router.ordered_models("gemini", ["fast", "slow", "lite"]) == ["slow", "lite", "fast"]
+    assert router.ordered_models("gemini", ["fast", "slow"], prefer="fast") == ["fast", "slow"]
+    assert router.ordered_models("groq", ["fast"]) == ["fast"]  # cooldowns are per provider

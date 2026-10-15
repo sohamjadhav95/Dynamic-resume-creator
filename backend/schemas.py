@@ -48,14 +48,30 @@ class ParseRequest(BaseModel):
     text: str = Field(min_length=40, max_length=MAX_RESUME_TEXT_CHARS)
 
 
-class Replacement(BaseModel):
-    old_text: str = Field(min_length=1)
-    new_text: str = Field(min_length=1)
+MAX_FILE_B64_CHARS = 4_200_000  # ~3 MB file; Vercel accepts request bodies up to 4.5 MB
 
 
-class DocTailorRequest(BaseModel):
-    docx_base64: str = Field(min_length=10)
-    replacements: list[Replacement] = Field(default_factory=list)
+class FileUploadRequest(BaseModel):
+    filename: str = Field("", max_length=300)
+    file_base64: str = Field(min_length=10, max_length=MAX_FILE_B64_CHARS)
+
+
+class FileEdit(BaseModel):
+    id: str = Field(max_length=40)
+    text: str = Field(max_length=2000)
+
+
+class FileTailorRequest(BaseModel):
+    file_type: Literal["pdf", "docx"]
+    file_base64: str = Field(min_length=10, max_length=MAX_FILE_B64_CHARS)
+    job_description: str = Field(min_length=30, max_length=MAX_JD_CHARS)
+    options: TailorOptions = TailorOptions()
+
+
+class FileRenderRequest(BaseModel):
+    file_type: Literal["pdf", "docx"]
+    file_base64: str = Field(min_length=10, max_length=MAX_FILE_B64_CHARS)
+    edits: list[FileEdit] = Field(default_factory=list, max_length=200)
 
 
 # ---------------------------------------------------------------- AI outputs
@@ -103,6 +119,18 @@ class TailorOutput(BaseModel):
     keywords: list[Keyword]
     project_ideas: list[ProjectIdea]
     advice: list[str]
+
+
+class FileTailorOutput(BaseModel):
+    job: JobInfo
+    edits: list[FileEdit]
+    keywords: list[Keyword]
+    project_ideas: list[ProjectIdea]
+    advice: list[str]
+
+
+class FileFixOutput(BaseModel):
+    edits: list[FileEdit]
 
 
 class RewriteOutput(BaseModel):
