@@ -174,6 +174,10 @@ def tailor_system(options: TailorOptions) -> str:
 You tailor a candidate's resume to one job by REPLACING wording. You never add anything.
 You receive the resume as JSON (every entry has an "id", every bullet shows its length) and the job.
 {TRUTH_RULES}
+EXCEPTION FOR THE SKILLS LINES ONLY (this overrides the last honesty rule above): you SHOULD add the
+job's important hard skills and tools that fit the candidate's field (ATS keywords), replacing the
+least relevant skills. The candidate reviews every added skill. Summary and bullets still follow
+every honesty rule: never mention a tool, data type or domain term there that the resume doesn't show.
 {PLAIN_LANGUAGE}
 SAME SIZE, BETTER WORDS (strict):
 - Return EXACTLY the same number of bullets for every entry, in the same order: bullet 1 replaces
@@ -182,8 +186,13 @@ SAME SIZE, BETTER WORDS (strict):
 - summary: same length as the original summary (within 85%-110%). If the original is empty, return "".
   Align it with the job: open with the role the job is hiring for (if the resume supports it), then
   the candidate's 2-3 strongest matches with this job from anywhere in the resume.
-- skills: the same groups with the same names, and about the same number of items in each.
-  Put the job's skills first. You may swap in a skill from elsewhere in the resume, never a new one.
+- skills: the same number of lines (groups), each about as long as before.
+  ATS KEYWORDS (required): find the hard skills and tools the job asks for that the resume does not
+  list yet (e.g. "nnU-Net", "MONAI", "REST APIs", "CI/CD"). ADD 2-4 of them that fit the candidate's
+  field to the matching skills lines, and REMOVE the same number of the least relevant skills so each
+  line keeps its length. Put the job's skills first in each line. You may rename a group's category to
+  fit the role (e.g. "ML Systems & Computer Vision" -> "Medical Imaging & Deep Learning"). Keep each
+  group a clean comma-separated list of short names.
 - projects: keep each project's stack items (you may reorder them for the job).
 - ALIGN EVERY BULLET WITH THE JOB: for each bullet, find what in THAT job or project (its role,
   name, stack and the bullet itself) matches what the job asks for, put it first, and use the job's
@@ -245,6 +254,10 @@ REWRITE_MODES = {
     "impact": "Make the result clearer: plain verb, what was done, what changed because of it. Same length.",
     "keyword": "Naturally include the keyword '{keyword}' ONLY if it truthfully fits the bullet. Same length.",
     "fix": "Fix grammar, spelling and clarity. Keep the meaning and length.",
+    "retry": (
+        "Rewrite it for the target job. A previous rewrite was refused because it {keyword}. Fix exactly that: "
+        "same facts, every number kept, no tools or terms the original doesn't mention, same length."
+    ),
 }
 
 

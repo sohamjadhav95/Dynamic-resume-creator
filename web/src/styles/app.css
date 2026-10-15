@@ -1428,131 +1428,55 @@ details.options .body {
   }
 }
 
-/* ---------------------------------------------------------------- uploaded file view + changes */
-.file-wrap {
+/* ---------------------------------------------------------------- collapsible panels */
+.panel {
+  padding: 0;
+}
+.panel-head {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
-  padding: 8px 0 24px;
+  padding: 12px 16px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
 }
-.file-pages {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
+.panel-head:hover {
+  background: var(--surface-sunk);
 }
-.file-page {
-  display: block;
-  background: #fff;
-  box-shadow: var(--shadow-2, 0 2px 12px rgba(0, 0, 0, 0.12));
-  max-width: none;
-}
-.file-status {
-  padding: 40px 16px;
-  text-align: center;
-  color: var(--ink-2);
-  font-size: 14px;
-}
-.file-status.error {
-  color: var(--accent-strong);
-}
-.file-tip {
-  max-width: 640px;
-  margin: 0 16px;
+.panel-extra {
+  font-weight: 500;
   font-size: 12.5px;
   color: var(--ink-2);
-  background: var(--surface-sunk);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
 }
-.changes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.panel-chevron {
+  display: inline-flex;
+  transition: transform 0.15s ease;
+}
+.panel.is-closed .panel-chevron {
+  transform: rotate(-90deg);
+}
+.panel-body {
+  padding: 0 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.change {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.change.is-off .change-new {
-  opacity: 0.55;
-}
-.change-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-}
-.change-where {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-2);
-}
-.change-toggle {
-  font-size: 13px;
-}
-.change-old {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--ink-2);
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, var(--ink-2) 50%, transparent);
-}
-.change-new {
-  margin: 0;
-  font-size: 13.5px;
-  color: var(--ink);
-  border-left: 3px solid var(--moss);
-  padding-left: 8px;
-}
-.change-note {
-  margin: 0;
-}
-.change-kept {
-  margin: 0;
-  font-size: 13.5px;
-  color: var(--ink);
-}
-.change-suggested {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--ink-2);
-}
-.change-label {
-  font-weight: 600;
-}
-.change-edit {
-  align-self: flex-start;
-  padding-left: 0;
-}
-.warn-text {
-  color: var(--amber);
-}
-.how {
-  padding: 12px 16px;
-  font-size: 13px;
-}
-.how summary {
-  cursor: pointer;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
 .how ol {
-  margin: 10px 0 0;
+  margin: 0;
   padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   color: var(--ink-2);
+  font-size: 13px;
+}
+.warn-text {
+  color: var(--amber);
 }

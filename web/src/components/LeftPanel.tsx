@@ -6,6 +6,7 @@ import { SECTION_LABELS, clone, uid, type Resume, type SectionKey, type Template
 import { MASTER, useStore } from "../lib/store";
 import { focusPathSoon } from "./Editable";
 import { Icon } from "./Icon";
+import { Panel } from "./ui";
 
 export function LeftPanel({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
   return (
@@ -29,10 +30,15 @@ function JobCard({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
   const setOpt = (patch: Partial<typeof o>) => dispatch({ type: "setOptions", patch });
 
   return (
-    <section className="panel-section" aria-labelledby="job-title">
-      <h2 className="step-title" id="job-title">
-        <span className="step-num">1</span> The job
-      </h2>
+    <Panel
+      flat
+      id="step-job"
+      title={
+        <>
+          <span className="step-num">1</span> The job
+        </>
+      }
+    >
       <div className="stack">
         <div className="field">
           <label className="label" htmlFor="jd">
@@ -94,20 +100,11 @@ function JobCard({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
           {!busy && <span className="kbd hide-sm">Ctrl ↵</span>}
         </button>
         <p className="hint" style={{ margin: 0 }}>
-          {state.ws.master.source ? (
-            <>
-              Tailoring rewords the lines inside <strong>your own file</strong>. Same design, same length, same page
-              count. Your original stays untouched.
-            </>
-          ) : (
-            <>
-              Tailoring rewords your <strong>master profile</strong> into a new version: same bullets, same length.
-              Your master stays untouched.
-            </>
-          )}
+          Tailoring rewords your <strong>master profile</strong> into a new version for this job: same bullets, same
+          length. Your master stays untouched.
         </p>
       </div>
-    </section>
+    </Panel>
   );
 }
 
@@ -197,15 +194,16 @@ function SectionsCard() {
   };
 
   return (
-    <section className="panel-section" aria-labelledby="sections-title">
-      <h2 className="step-title" id="sections-title">
-        <span className="step-num">2</span> Sections
-        <span className="spacer" />
-        <span className="hint" style={{ fontFamily: "var(--font-ui)", fontWeight: 400 }}>
-          {state.activeId === MASTER ? "Master profile" : "This version"}
-        </span>
-      </h2>
-
+    <Panel
+      flat
+      id="step-sections"
+      title={
+        <>
+          <span className="step-num">2</span> Sections
+        </>
+      }
+      extra={state.activeId === MASTER ? "Master profile" : "This version"}
+    >
       <ContactDetails />
 
       <ul className="sec-list">
@@ -343,7 +341,7 @@ function SectionsCard() {
           );
         })}
       </ul>
-    </section>
+    </Panel>
   );
 }
 
@@ -390,6 +388,7 @@ function ContactDetails() {
 // ------------------------------------------------------------------ 3 · Design
 
 const TEMPLATES: { id: TemplateId; name: string }[] = [
+  { id: "original", name: "Original" },
   { id: "classic", name: "Classic" },
   { id: "modern", name: "Modern" },
   { id: "compact", name: "Compact" },
@@ -408,17 +407,22 @@ function DesignCard() {
   const L = resume.layout;
   const set = (patch: Partial<typeof L>, key?: string) => edit({ ...resume, layout: { ...L, ...patch } }, key);
   return (
-    <section className="panel-section" aria-labelledby="design-title">
-      <h2 className="step-title" id="design-title">
-        <span className="step-num">3</span> Design
-      </h2>
+    <Panel
+      flat
+      id="step-design"
+      title={
+        <>
+          <span className="step-num">3</span> Design
+        </>
+      }
+    >
       <div className="stack">
         <div className="tpl-picker" role="group" aria-label="Template">
           {TEMPLATES.map((t) => (
             <button key={t.id} className="tpl-option" aria-pressed={L.template === t.id} onClick={() => set({ template: t.id })}>
               <span className={`tpl-thumb ${t.id}`} aria-hidden="true">
                 <i className="h" />
-                <i style={{ width: "80%", margin: t.id === "classic" ? "0 auto" : undefined }} />
+                <i style={{ width: "80%", margin: t.id === "classic" || t.id === "original" ? "0 auto" : undefined }} />
                 <i className="s" />
                 <i />
                 <i style={{ width: "85%" }} />
@@ -472,6 +476,6 @@ function DesignCard() {
           </div>
         </div>
       </div>
-    </section>
+    </Panel>
   );
 }

@@ -1,30 +1,28 @@
 # Tailor — one resume, tailored to every job
 
-Upload your resume (PDF or Word), paste a job post, and get a version that speaks the job's language, **in your own
-file, with your own design**. Only the words change: same fonts, same layout, same page count.
+Paste a job post and get a version of your resume that speaks its language: same design, same size, one page,
+honest rewrites, and a live match score. Works like the original app: your resume is one JSON master, the page is a
+template you edit by clicking any text, and **PDF** saves exactly what you see.
 
 ![Studio](docs/screenshots/studio.png)
 
 ## How tailoring works
 
-1. **Find the safe lines.** We read your file and find the lines that can change: bullet points, the summary and skill
-   lists. Your name, contact details, job titles, companies, dates, education and certificates are never touched.
-2. **Rewrite in plain words.** The AI reads the job post and rewrites those lines in simple, human language, using the
-   job's keywords only where they are true for you. It **replaces** text; it never adds lines. Each line comes with a
-   character range so the new text has the same size as the old one.
-3. **Check every rewrite** (on the server, not trusted to the AI):
-   - every number in the old line must still be there, and no new numbers may appear;
-   - it must be about the same length (never more than ~15% longer);
-   - it must fit in **the same number of lines** (measured with the real font metrics).
-   Lines that fail go back to the AI once with the exact reason; if they fail again, the original line stays.
-4. **Write it into your file.** PDF: the old characters are removed and the new words are drawn on the same baselines,
-   with the same font (or one with identical widths), size and colour; justified text stays justified and bold keywords
-   stay bold. Word: only the text inside the existing runs changes, so styles, bullets and indents stay as they are.
-5. **You stay in control.** Every change is listed (before → after). Switch any change off, or reword it yourself; your
-   wording gets the same fit check.
+1. **Master resume.** Import your resume (PDF, Word, text, or a JSON file such as the old `master_resume.json`). It
+   becomes your master profile; tailoring never changes it, every job gets its own version.
+2. **Rewrite.** The AI rewrites the summary and every bullet so the part each job or project shares with the job post
+   comes first, in plain words. Same number of bullets, about the same length, so the page keeps its size.
+3. **Skills (ATS keywords).** Like the original app, the job's important tools are added to the skills lines and the
+   least relevant ones removed; categories may be renamed for the role. Added skills are listed under **Tips** so you
+   can remove any you haven't used.
+4. **Checks, in code.** Every rewrite must keep all numbers, add no new ones, stay about the same length, and not name
+   tools or terms your resume doesn't show (bullets: only from that same job or project). A refused line gets one
+   more AI try with the reason; otherwise the original stays. Refused lines are listed under Tips.
+5. **Edit and export.** Click any text on the page to change it; click a missing keyword to swap it into your skills.
+   The page meter shows "1 page" or how many lines you are over.
 
-Code: `backend/fileedit/` (PDF via PyMuPDF, Word via python-docx), prompts in `backend/prompts.py`,
-endpoints `/api/file/extract`, `/api/file/tailor` (streaming) and `/api/file/render` in `backend/app.py`.
+The default **Original** template reproduces the owner's PDF layout (Arial, A4, 15 mm sides, full uppercase section
+names, company on line 1 and role on line 2, italic tech stacks).
 
 ## What it does
 
@@ -42,8 +40,7 @@ endpoints `/api/file/extract`, `/api/file/tailor` (streaming) and `/api/file/ren
   add a keyword, fix grammar).
 - **Page meter** ("1 page ✓" / "over by 3 lines") and **Fit to 1 page**. 3 ATS-safe templates, A4/Letter, spacing and
   heading color.
-- **Keep your design**: upload a PDF or Word file and tailoring edits that file in place (see above). Download the
-  tailored PDF or Word file directly. Text or pasted resumes use the built-in template instead.
+- **Import** a PDF, Word file, pasted text or JSON; AI splits it into sections (with a non-AI parser as backup).
 - **Accounts are optional**: guests save in the browser; signing in (Google or email link) saves to the cloud.
   The first sign-in moves the guest resume into the account.
 - **Accessible**: keyboard everywhere, visible focus, screen-reader labels, WCAG AA contrast, reduced motion, dark mode.
@@ -84,7 +81,7 @@ was blocked, rate-limited or took minutes. Change the order without code via the
 | Web app | React 19 + TypeScript + Vite, plain CSS design tokens | `web/` → Vercel CDN |
 | API | FastAPI (stateless), streaming Server-Sent Events | `backend/`, entry `api/index.py` → Vercel Python function |
 | AI | Gemini (`google-genai`) → Groq (OpenAI-compatible HTTP), both free tiers | `backend/ai/` |
-| File editing | PyMuPDF (PDF), python-docx (Word); pdf.js / docx-preview to show files in the browser | `backend/fileedit/` |
+| File reading | PyMuPDF (PDF) and python-docx (Word) read uploaded resumes; `backend/fileedit/` can also edit a file in place (API only) | `backend/fileedit/` |
 | Accounts & data | Supabase Auth + Postgres with Row Level Security | `supabase/migrations/` |
 
 API endpoints: `POST /api/file/extract`, `POST /api/file/tailor` (stream), `POST /api/file/render`, `POST /api/tailor` (stream), `POST /api/parse` (stream), `POST /api/rewrite`, `GET /api/config`,

@@ -29,35 +29,14 @@ export const LOCAL_KEY = "tailor.workspace.v2";
 /** Signed-in users also keep a copy in the browser, so the app works if the cloud is unreachable. */
 export const userCacheKey = (userId: string) => `${LOCAL_KEY}:${userId}`;
 
-// An uploaded file can be a few hundred KB. Versions usually share the master's file, so in the
-// browser it is stored once and versions point at it (browser storage is only ~5 MB).
-const SAME_AS_MASTER = "@master";
-
-function packed(ws: Workspace): unknown {
-  const shared = ws.master.source?.data;
-  return {
-    master: ws.master,
-    versions: ws.versions.map((v) =>
-      shared && v.data.source?.data === shared
-        ? { ...v, data: { ...v.data, source: { ...v.data.source, data: SAME_AS_MASTER } } }
-        : v,
-    ),
-  };
-}
-
 export function loadLocal(key = LOCAL_KEY): Workspace | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const ws = JSON.parse(raw);
-    const shared = ws.master?.source?.data;
     return {
       master: normalizeResume(ws.master),
-      versions: (ws.versions ?? []).map((v: Version) => {
-        const data = v.data as any;
-        if (data?.source?.data === SAME_AS_MASTER) data.source = shared ? { ...data.source, data: shared } : undefined;
-        return { ...v, data: normalizeResume(data) };
-      }),
+      versions: (ws.versions ?? []).map((v: Version) => ({ ...v, data: normalizeResume(v.data) })),
     };
   } catch {
     return null;
@@ -66,7 +45,7 @@ export function loadLocal(key = LOCAL_KEY): Workspace | null {
 
 export function saveLocal(ws: Workspace, key = LOCAL_KEY): boolean {
   try {
-    localStorage.setItem(key, JSON.stringify(packed(ws)));
+    localStorage.setItem(key, JSON.stringify(ws));
     return true;
   } catch {
     return false; // storage full or blocked

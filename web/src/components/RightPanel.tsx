@@ -7,9 +7,9 @@ import { useMatch } from "../lib/match";
 import { clone, getPath, setPath, uid } from "../lib/schema";
 import { useSelection } from "../lib/selection";
 import { MASTER, useStore } from "../lib/store";
-import { ChangesCard, HowItWorks } from "./Changes";
+import { HowItWorks } from "./HowItWorks";
 import { Icon } from "./Icon";
-import { Dialog, useToast } from "./ui";
+import { Dialog, Panel, useToast } from "./ui";
 
 export interface TailorProgress {
   startedAt: number;
@@ -17,7 +17,6 @@ export interface TailorProgress {
   provider: string;
   thought: string;
   chars: number;
-  fileMode?: boolean; // tailoring an uploaded file (no offline "quick version" for files)
 }
 
 export function RightPanel({
@@ -36,12 +35,15 @@ export function RightPanel({
   return (
     <div className="stack" style={{ padding: 18, gap: 16 }}>
       {progress && <ProgressCard progress={progress} onQuick={onQuick} onCancel={onCancel} />}
-      {version && <ChangesCard />}
       <MatchCard match={match} jd={jd} />
       <RewriteCard jd={jd} missing={match?.matches.filter((m) => !m.found).map((m) => m.term) ?? []} />
+      {version &&
+        (version.insights.advice.length > 0 ||
+          version.insights.removed.length > 0 ||
+          (version.insights.added?.length ?? 0) > 0 ||
+          (version.insights.kept?.length ?? 0) > 0) && <AdviceCard />}
       {version && version.insights.project_ideas.length > 0 && <IdeasCard />}
-      {version && (version.insights.advice.length > 0 || version.insights.removed.length > 0) && <AdviceCard />}
-      <HowItWorks open={state.activeId === MASTER && !version && !jd.trim()} />
+      <HowItWorks defaultOpen={state.activeId === MASTER && !version && !jd.trim()} />
       {state.activeId === MASTER && !jd.trim() && !progress && (
         <div className="empty-state">
           <Icon name="target" size={22} />
@@ -70,10 +72,7 @@ function ProgressCard({ progress, onQuick, onCancel }: { progress: TailorProgres
           ? `${progress.provider} is busy — switching to backup AI`
           : `Writing with ${progress.provider || "AI"}${progress.chars ? ` · ${Math.round(progress.chars / 5)} words` : ""}`,
     },
-    {
-      key: ["finishing"],
-      label: progress.fileMode ? "Checking facts and fitting the words into your file" : "Fact-checking and laying out your page",
-    },
+    { key: ["finishing"], label: "Fact-checking and laying out your page" },
   ];
   const order: TailorProgress["stage"][] = ["sending", "writing", "finishing"];
   const current = order.indexOf(progress.stage === "switching" ? "writing" : progress.stage);
@@ -103,11 +102,9 @@ function ProgressCard({ progress, onQuick, onCancel }: { progress: TailorProgres
         </p>
       )}
       <div className="row wrap">
-        {!progress.fileMode && (
-          <button className="btn btn-sm" onClick={onQuick} title="Skip the AI and reorder your resume for this job instantly">
-            <Icon name="bolt" size={15} /> Use quick version now
-          </button>
-        )}
+        <button className="btn btn-sm" onClick={onQuick} title="Skip the AI and reorder your resume for this job instantly">
+          <Icon name="bolt" size={15} /> Use quick version now
+        </button>
         <button className="btn btn-ghost btn-sm" onClick={onCancel}>
           Cancel
         </button>
@@ -204,7 +201,7 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
   };
 
   return (
-    <section className="card" style={{ padding: 16 }} aria-labelledby="match-title">
+    <Panel id="match" icon="target" title="Match with this job" extra={`${match.score}%`}>
       <div className="score-wrap">
         <Ring value={match.score} />
         <div className="score-copy">
@@ -326,7 +323,7 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
           </div>
         </Dialog>
       )}
-    </section>
+    </Panel>
   );
 }
 
@@ -347,15 +344,11 @@ function RewriteCard({ jd, missing }: { jd: string; missing: string[] }) {
   const text = selected ? String(getPath(resume, selected.path) ?? "") : "";
   if (!selected || !text.trim()) {
     return (
-      <section className="card" style={{ padding: 16 }}>
-        <div className="row" style={{ marginBottom: 6 }}>
-          <Icon name="pen" size={16} />
-          <strong>Improve a bullet</strong>
-        </div>
+      <Panel id="rewrite" icon="pen" title="Improve a bullet">
         <p className="hint" style={{ margin: 0 }}>
           Click any bullet on the page to rewrite it with AI: stronger, shorter, or with a keyword.
         </p>
-      </section>
+      </Panel>
     );
   }
 
@@ -378,13 +371,10 @@ function RewriteCard({ jd, missing }: { jd: string; missing: string[] }) {
   };
 
   return (
-    <section className="card stack" style={{ padding: 16, gap: 10 }} aria-labelledby="rw-title">
+    <Panel id="rewrite" icon="pen" title="Improve this bullet">
       <div className="row">
-        <Icon name="pen" size={16} />
-        <strong id="rw-title" className="grow">
-          Improve this bullet
-        </strong>
-        <button className="icon-btn sm" aria-label="Close" onClick={() => setSelected(null)}>
+        <span className="hint grow">Rewrite with AI, then click the version you like.</span>
+        <button className="icon-btn sm" aria-label="Stop editing this bullet" onClick={() => setSelected(null)}>
           <Icon name="x" size={14} />
         </button>
       </div>
@@ -430,7 +420,7 @@ function RewriteCard({ jd, missing }: { jd: string; missing: string[] }) {
           ))}
         </div>
       )}
-    </section>
+    </Panel>
   );
 }
 
@@ -440,11 +430,7 @@ function IdeasCard() {
   const { version } = useStore();
   if (!version) return null;
   return (
-    <section className="card stack" style={{ padding: 16, gap: 10 }} aria-labelledby="ideas-title">
-      <div className="row">
-        <Icon name="bulb" size={16} />
-        <strong id="ideas-title">Project ideas for this job</strong>
-      </div>
+    <Panel id="ideas" icon="bulb" title="Project ideas for this job" defaultOpen={false}>
       <p className="hint" style={{ margin: 0 }}>
         Not added to your resume. Build one to close a gap, then add it for real.
       </p>
@@ -455,7 +441,7 @@ function IdeasCard() {
           <div className="stack-line">{idea.stack.join(" · ")}</div>
         </div>
       ))}
-    </section>
+    </Panel>
   );
 }
 
@@ -463,13 +449,17 @@ function AdviceCard() {
   const { version } = useStore();
   if (!version) return null;
   const { advice, removed } = version.insights;
+  const added = version.insights.added ?? [];
+  const kept = version.insights.kept ?? [];
   return (
-    <section className="card stack" style={{ padding: 16, gap: 10 }} aria-labelledby="advice-title">
-      <div className="row">
-        <Icon name="info" size={16} />
-        <strong id="advice-title">Tips</strong>
-      </div>
+    <Panel id="tips" icon="info" title="Tips">
       <ul className="advice">
+        {added.length > 0 && (
+          <li>
+            <strong>Skills added from the job post:</strong> {added.join(", ")}. Keep them only if you have really
+            used them; click a skill on the page to change it.
+          </li>
+        )}
         {advice.map((a) => (
           <li key={a}>{a}</li>
         ))}
@@ -480,6 +470,20 @@ function AdviceCard() {
           </li>
         )}
       </ul>
-    </section>
+      {kept.length > 0 && (
+        <details className="kept">
+          <summary>
+            {kept.length} line{kept.length === 1 ? " was" : "s were"} kept as {kept.length === 1 ? "it was" : "they were"}
+          </summary>
+          <ul className="advice">
+            {kept.map((k) => (
+              <li key={k.old}>
+                <span className="hint">The AI's version {k.reason}:</span> {k.suggested}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </Panel>
   );
 }

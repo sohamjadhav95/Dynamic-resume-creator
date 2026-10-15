@@ -6,10 +6,11 @@ export interface Prefs {
   theme: Theme;
   geminiKey: string;
   zoom: number; // 0 = fit to width
+  closed: string[]; // ids of panel sections the person collapsed
 }
 
 const KEY = "tailor.prefs.v1";
-const DEFAULTS: Prefs = { theme: "system", geminiKey: "", zoom: 0 };
+const DEFAULTS: Prefs = { theme: "system", geminiKey: "", zoom: 0, closed: [] };
 
 export function loadPrefs(): Prefs {
   try {

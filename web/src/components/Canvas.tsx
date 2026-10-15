@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { downloadBase64, useResumeFile } from "../lib/files";
 import { loadPrefs, savePrefs } from "../lib/prefs";
 import type { Resume } from "../lib/schema";
 import { useStore } from "../lib/store";
-import { FileView } from "./FileView";
 import { Icon } from "./Icon";
 import { ResumePage } from "./ResumePage";
 
@@ -11,7 +9,17 @@ export const PAGE_MM = { A4: { w: 210, h: 297 }, Letter: { w: 215.9, h: 279.4 } 
 
 export function marginMm(r: Resume): number {
   const d = r.layout.density;
+  if (r.layout.template === "original") return 15 - d * 0.8;
   return r.layout.template === "compact" ? 10.5 - d * 1.0 : 13 - d * 1.2;
+}
+
+/** CSS margin for printing: the Original template has a smaller top/bottom margin, like the source PDF. */
+export function pageMargin(r: Resume): string {
+  if (r.layout.template === "original") {
+    const d = r.layout.density;
+    return `${(10 - d * 0.8).toFixed(1)}mm ${marginMm(r).toFixed(1)}mm`;
+  }
+  return `${marginMm(r).toFixed(1)}mm`;
 }
 
 export interface PageInfo {
@@ -30,9 +38,6 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
   const [zoom, setZoom] = useState(() => loadPrefs().zoom);
   const [fitZoom, setFitZoom] = useState(1);
   const fitting = useRef(false);
-  const [preferTemplate, setPreferTemplate] = useState(false);
-  const viewMode: "file" | "template" = resume.source && !preferTemplate ? "file" : "template";
-  const file = useResumeFile(resume);
 
   const measure = useCallback(() => {
     const sheet = sheetRef.current;
@@ -50,7 +55,7 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
     setGuides(Array.from({ length: pages - 1 }, (_, i) => (i + 1) * pageH));
   }, []);
 
-  useLayoutEffect(measure, [resume, measure, viewMode]);
+  useLayoutEffect(measure, [resume, measure]);
   useEffect(() => {
     const sheet = sheetRef.current;
     if (!sheet) return;
@@ -58,7 +63,7 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
     ro.observe(sheet);
     document.fonts?.ready.then(measure);
     return () => ro.disconnect();
-  }, [measure, viewMode]);
+  }, [measure]);
 
   useEffect(() => {
     const el = canvasRef.current;
@@ -90,14 +95,9 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
   };
 
   const baseName = () => {
-    const who = resume.basics.name || resume.source?.name.replace(/\.(pdf|docx)$/i, "") || "Resume";
+    const who = resume.basics.name || "Resume";
     const forJob = title.startsWith("Tailored for ") ? ` - ${title.slice(13)}` : "";
     return `${who}${forJob}`.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
-  };
-
-  const downloadFile = () => {
-    if (!resume.source || !file.data) return;
-    downloadBase64(file.data, `${baseName()}.${resume.source.type}`, resume.source.type);
   };
 
   const downloadTemplateDocx = async () => {
@@ -110,40 +110,16 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
   };
 
   const page = PAGE_MM[resume.layout.page];
-  const margin = marginMm(resume);
 
   return (
     <main className="center" id="main" aria-label="Resume preview">
-      <style>{`@page { size: ${resume.layout.page === "A4" ? "A4" : "letter"}; margin: ${margin.toFixed(1)}mm; }
+      <style>{`@page { size: ${resume.layout.page === "A4" ? "A4" : "letter"}; margin: ${pageMargin(resume)}; }
 @media print { .sheet { padding: 0 !important; width: auto !important; min-height: 0 !important; } }`}</style>
       <div className="canvas-bar no-print">
         <div className="doc-title grow" title={title}>
           {title}
         </div>
-        {resume.source && (
-          <div className="segmented" role="tablist" aria-label="What to show" style={{ margin: "0 4px" }}>
-            <button
-              role="tab"
-              aria-selected={viewMode === "file"}
-              onClick={() => setPreferTemplate(false)}
-              className="sm"
-              title="Your own file, with your design"
-            >
-              Your file
-            </button>
-            <button
-              role="tab"
-              aria-selected={viewMode === "template"}
-              onClick={() => setPreferTemplate(true)}
-              className="sm"
-              title="The app's click-to-edit template"
-            >
-              Template
-            </button>
-          </div>
-        )}
-        {viewMode === "template" && (
-          <span className="meter" aria-live="polite">
+        <span className="meter" aria-live="polite">
             {info.fits ? (
               <span className="badge ok">
                 <Icon name="check" size={13} /> 1 page
@@ -167,7 +143,6 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
               </>
             )}
           </span>
-        )}
         <div className="row hide-sm" role="group" aria-label="Zoom">
           <button className="icon-btn sm" aria-label="Zoom out" onClick={() => setZoomPref(Math.max(0.4, +(effectiveZoom - 0.1).toFixed(2)))}>
             −
@@ -179,44 +154,14 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
             +
           </button>
         </div>
-        {viewMode === "file" && resume.source ? (
-          <button
-            className="btn btn-ink btn-sm"
-            onClick={downloadFile}
-            disabled={!file.data}
-            title={resume.source.type === "pdf" ? "Download your PDF" : "Download your Word file"}
-          >
-            <Icon name="download" size={16} /> {resume.source.type === "pdf" ? "PDF" : "Word"}
-          </button>
-        ) : (
-          <>
-            <button className="btn btn-sm hide-sm" onClick={downloadTemplateDocx} title="Download as a Word file (.docx)">
-              <Icon name="page" size={15} /> Word
-            </button>
-            <button className="btn btn-ink btn-sm" onClick={onPrint} title="Print or save as PDF">
-              <Icon name="download" size={16} /> PDF
-            </button>
-          </>
-        )}
+        <button className="btn btn-sm hide-sm" onClick={downloadTemplateDocx} title="Download as a Word file (.docx)">
+          <Icon name="page" size={15} /> Word
+        </button>
+        <button className="btn btn-ink btn-sm" onClick={onPrint} title="Print or save as PDF">
+          <Icon name="download" size={16} /> PDF
+        </button>
       </div>
       <div className="canvas" ref={canvasRef}>
-        {viewMode === "file" && resume.source ? (
-          <div className="file-wrap">
-            {resume.source.type === "docx" && (
-              <p className="file-tip no-print">
-                Preview only: Word may show small spacing differences. For a PDF, open the downloaded file in Word and
-                choose <strong>File → Save as PDF</strong>.
-              </p>
-            )}
-            {file.data ? (
-              <FileView type={resume.source.type} data={file.data} zoom={effectiveZoom} font={resume.source.font} />
-            ) : (
-              <div className={`file-status ${file.error ? "error" : ""}`}>
-                {file.error || "Writing the changes into your file…"}
-              </div>
-            )}
-          </div>
-        ) : (
           <div className="print-root" style={{ zoom: effectiveZoom }}>
             <div
               ref={sheetRef}
@@ -233,7 +178,6 @@ export function Canvas({ title, onPrint }: { title: string; onPrint: () => void 
               ))}
             </div>
           </div>
-        )}
       </div>
     </main>
   );

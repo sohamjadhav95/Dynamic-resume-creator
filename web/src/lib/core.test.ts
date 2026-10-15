@@ -4,17 +4,9 @@ import sample from "../data/sample-resume.json";
 import { SAMPLE_JOB } from "../data/sample-job";
 import { heuristicParse, tryJson } from "./importing";
 import { containsTerm, extractKeywords, guessJob, highlight, matchKeywords, matchScore } from "./keywords";
-import { activeEdits, normalizeResume, resumeText, setPath, splitList, uuid, visibleResume, type FileChange } from "./schema";
+import { normalizeResume, resumeText, setPath, splitList, uuid, visibleResume } from "./schema";
 import { _reducerForTests as reducer, initialState, activeResume } from "./store";
-import {
-  acceptRewrite,
-  applyAiResult,
-  applyFileChanges,
-  isSupported,
-  offlineTailor,
-  updateFileChange,
-  type AiTailorOutput,
-} from "./tailor";
+import { acceptRewrite, applyAiResult, isSupported, newNames, offlineTailor, type AiTailorOutput } from "./tailor";
 
 const legacy = JSON.parse(readFileSync(new URL("../../../examples/legacy_master_resume.json", import.meta.url), "utf8"));
 
@@ -151,29 +143,7 @@ describe("tailoring", () => {
     const invented = "Cut AWS spend by 30% for 12 teams by moving batch jobs from EC2 to scheduled Airflow tasks on spot.";
     expect(acceptRewrite(old, invented, whole).ok).toBe(false);
     const longer = good + " This also made the nightly reports finish much faster for everyone on the data team.";
-    expect(acceptRewrite(old, longer, whole)).toEqual({ text: old, ok: false });
-  });
-
-  it("file changes can be switched off and back on", () => {
-    const bullet = master.experience[0].bullets[1];
-    const change: FileChange = {
-      id: "p0-9",
-      section: "EXPERIENCE",
-      kind: "bullet",
-      old: bullet,
-      new: "Cut AWS costs by 30% by moving batch jobs off always-on EC2 servers onto scheduled Airflow tasks on spot.",
-      status: "applied",
-      note: "",
-    };
-    const tailored = applyFileChanges(master, [change, { ...change, id: "p0-10", status: "unchanged" }]);
-    expect(tailored.file_changes?.length).toBe(1);
-    expect(tailored.experience[0].bullets[1]).toBe(change.new);
-    expect(activeEdits(tailored.file_changes)).toEqual([{ id: "p0-9", text: change.new }]);
-    const off = updateFileChange(tailored, "p0-9", { off: true });
-    expect(off.experience[0].bullets[1]).toBe(bullet);
-    expect(activeEdits(off.file_changes)).toEqual([]);
-    const back = updateFileChange(off, "p0-9", { off: false });
-    expect(back.experience[0].bullets[1]).toBe(change.new);
+    expect(acceptRewrite(old, longer, whole)).toMatchObject({ text: old, ok: false, reason: "longer than the original" });
   });
 });
 
@@ -224,5 +194,35 @@ Design: Figma, Prototyping, User research`;
   it("accepts JSON exports", () => {
     expect(tryJson(JSON.stringify({ master: sample }))?.basics.name).toBe("Alex Rivera");
     expect(tryJson("not json")).toBeNull();
+  });
+});
+
+describe("names check", () => {
+  it("blocks tools and places the resume does not show", () => {
+    expect(newNames("Built pipelines with Airflow.", "Built Airflow pipelines in Docker.", "Data Engineer at Acme")).toEqual(["Docker"]);
+    expect(newNames("Built pipelines with Airflow.", "Built Airflow pipelines in Docker.", "Stack: Docker, Airflow")).toEqual([]);
+    expect(newNames("Used U-Net on CT scans.", "Used U-Net on CT/MRI scans.", "")).toEqual(["CT/MRI"]);
+    expect(newNames("Led 3 teams.", "Mentored 3 teams; Shipped weekly.", "")).toEqual([]);
+    expect(newNames("Used Policy-as- Prompt rules.", "Used Policy-as-Prompt rules.", "")).toEqual([]);
+  });
+
+  it("lets skills take the job's keywords and lists them", () => {
+    const master = normalizeResume(sample);
+    const ai: AiTailorOutput = {
+      job: { title: "", company: "" },
+      summary: master.summary,
+      skills: master.skills.map((g, i) => ({ category: i === 0 ? "Backend & Streaming" : g.category, items: i === 0 ? ["Go", "Kafka", "gRPC", ...g.items.slice(2)] : g.items })),
+      experience: [],
+      projects: [],
+      project_order: [],
+      keywords: [],
+      project_ideas: [],
+      advice: [],
+    };
+    const jd = "We need Go, Kafka and gRPC experience for a backend team.";
+    const { resume, insights } = applyAiResult(master, ai, "groq", undefined, jd);
+    expect(resume.skills[0].category).toBe("Backend & Streaming");
+    expect(resume.skills[0].items).toContain("gRPC");
+    expect(insights.added).toContain("gRPC");
   });
 });

@@ -48,7 +48,6 @@ export type StreamEvent =
   | { type: "stage"; data: { provider: string; label: string; model?: string; retry?: boolean } }
   | { type: "thought"; data: { text: string } }
   | { type: "progress"; data: { chars: number } }
-  | { type: "checking"; data: Record<string, never> }
   | { type: "result"; data: { engine: "gemini" | "groq"; model: string; seconds: number; data: any } }
   | { type: "fallback"; data: { reasons?: string[] } }
   | { type: "limit"; data: { message: string; limit: number } };
@@ -58,7 +57,7 @@ export type StreamEvent =
  * Network failure or server error resolves as a fallback, so callers always get an answer.
  */
 export async function streamAi(
-  path: "/api/tailor" | "/api/parse" | "/api/file/tailor",
+  path: "/api/tailor" | "/api/parse",
   body: unknown,
   onEvent: (e: StreamEvent) => void,
   signal?: AbortSignal,
@@ -118,7 +117,7 @@ function parseBlock(block: string): StreamEvent | null {
 
 export async function rewriteBullet(input: {
   text: string;
-  mode: "shorter" | "impact" | "keyword" | "fix";
+  mode: "shorter" | "impact" | "keyword" | "fix" | "retry";
   keyword?: string;
   context?: string;
   job_description?: string;
@@ -144,8 +143,6 @@ export interface ExtractedFile {
   file_type: "pdf" | "docx";
   pages: number;
   text: string;
-  editable: number; // lines the AI is allowed to rewrite
-  font: string; // main body font (Word files)
 }
 
 async function postJson<T>(path: string, body: unknown, offlineMessage: string): Promise<T> {
@@ -159,25 +156,7 @@ async function postJson<T>(path: string, body: unknown, offlineMessage: string):
   return (await res.json()) as T;
 }
 
-/** Checks an uploaded resume on the server and returns its text. */
+/** Reads the text of an uploaded PDF or Word file on the server (keeps lines and bullets in order). */
 export function extractFile(filename: string, fileBase64: string): Promise<ExtractedFile> {
   return postJson("/api/file/extract", { filename, file_base64: fileBase64 }, "Could not reach the server to read this file.");
-}
-
-export interface RenderResult {
-  file_base64: string;
-  results: { id: string; status: string; note: string; new: string }[];
-}
-
-/** Writes text changes into the original file (no AI). */
-export function renderFile(
-  fileType: "pdf" | "docx",
-  fileBase64: string,
-  edits: { id: string; text: string }[],
-): Promise<RenderResult> {
-  return postJson(
-    "/api/file/render",
-    { file_type: fileType, file_base64: fileBase64, edits },
-    "You seem to be offline. Updating the file needs a connection.",
-  );
 }

@@ -11,8 +11,7 @@ import { useLayoutMode, useToast } from "./components/ui";
 import { Welcome } from "./components/Welcome";
 import sample from "./data/sample-resume.json";
 import { SAMPLE_JOB } from "./data/sample-job";
-import { ApiError, getConfig, streamAi, warmUp, type StreamEvent } from "./lib/api";
-import { rememberFile } from "./lib/files";
+import { ApiError, getConfig, rewriteBullet, streamAi, warmUp, type StreamEvent } from "./lib/api";
 import { guessJob } from "./lib/keywords";
 import { computeMatch } from "./lib/match";
 import { applyTheme, loadPrefs, savePrefs, type Theme } from "./lib/prefs";
@@ -32,7 +31,7 @@ import {
 } from "./lib/storage";
 import { MASTER, useStore } from "./lib/store";
 import { signOut, watchSession } from "./lib/supabase";
-import { applyAiResult, applyFileChanges, offlineTailor, type FileTailorResult, type Insights } from "./lib/tailor";
+import { applyAiResult, offlineTailor, retryRefused, type Insights } from "./lib/tailor";
 
 type Dialog = null | "auth" | "versions" | "settings" | "import-upload" | "import-paste";
 type Mode = { kind: "guest" } | { kind: "cloud"; userId: string } | { kind: "cloud-offline"; userId: string };
@@ -181,8 +180,7 @@ export function App() {
     }
     if (progress) return;
     const opts = state.options;
-    const fileMode = !!master.source;
-    setProgress({ startedAt: Date.now(), stage: "sending", provider: "", thought: "", chars: 0, fileMode });
+    setProgress({ startedAt: Date.now(), stage: "sending", provider: "", thought: "", chars: 0 });
     if (layout === "narrow") setMobileTab("insights");
     if (layout === "medium") setSideTab("insights");
     const ctrl = new AbortController();
@@ -199,68 +197,9 @@ export function App() {
           return { ...p, stage: "writing", thought: sentence.slice(0, 160) };
         }
         if (e.type === "progress") return { ...p, stage: "writing", chars: e.data.chars };
-        if (e.type === "checking") return { ...p, stage: "finishing" };
         return p;
       });
     };
-
-    // Uploaded PDF / Word file: the server rewrites lines inside the file itself.
-    if (master.source) {
-      const source = master.source;
-      try {
-        const final = await streamAi(
-          "/api/file/tailor",
-          {
-            file_type: source.type,
-            file_base64: source.data,
-            job_description: jd,
-            options: { tone: opts.tone, instructions: opts.instructions },
-          },
-          onEvent,
-          ctrl.signal,
-        );
-        if (final.type !== "result") {
-          toast({
-            message:
-              final.type === "limit"
-                ? final.data.message
-                : "The AI is busy right now, so your file was not changed. Please try again in a minute.",
-            kind: "error",
-          });
-          return;
-        }
-        const result = final.data.data as FileTailorResult;
-        const resume = applyFileChanges(master, result.results);
-        rememberFile(resume, result.file_base64);
-        const insights: Insights = {
-          job: result.job,
-          keywords: result.keywords,
-          project_ideas: result.project_ideas.slice(0, 3),
-          advice: result.advice.slice(0, 3),
-          removed: [],
-          engine: final.data.engine,
-          model: final.data.model,
-        };
-        const applied = result.results.filter((r) => r.status === "applied").length;
-        saveVersion(
-          { resume, insights },
-          jd,
-          applied
-            ? `Done: ${applied} line${applied === 1 ? "" : "s"} reworded inside your file. Same layout. See the changes on the right.`
-            : "The AI didn't find lines worth changing for this job, so your file is unchanged.",
-        );
-      } catch (err) {
-        if (!ctrl.signal.aborted) {
-          toast({
-            message: err instanceof ApiError ? err.message : "Something went wrong, so your file was not changed. Please try again.",
-            kind: "error",
-          });
-        }
-      } finally {
-        setProgress(null);
-      }
-      return;
-    }
 
     let outcome: { resume: Resume; insights: Insights };
     let note = "";
@@ -269,7 +208,8 @@ export function App() {
       const final = await streamAi("/api/tailor", { resume: aiPayload(master), job_description: jd, options: opts }, onEvent, ctrl.signal);
       if (final.type === "result") {
         setProgress((p) => p && { ...p, stage: "finishing" });
-        outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model);
+        outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model, jd);
+        outcome = await retryRefused(outcome, master, jd, rewriteBullet);
       } else {
         outcome = quick();
         note =

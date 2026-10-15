@@ -38,8 +38,8 @@ class TailorRequest(BaseModel):
 
 class RewriteRequest(BaseModel):
     text: str = Field(min_length=3, max_length=800)
-    mode: Literal["shorter", "impact", "keyword", "fix"] = "impact"
-    keyword: str = Field("", max_length=80)
+    mode: Literal["shorter", "impact", "keyword", "fix", "retry"] = "impact"
+    keyword: str = Field("", max_length=200)
     context: str = Field("", max_length=300)
     job_description: str = Field("", max_length=MAX_JD_CHARS)
 

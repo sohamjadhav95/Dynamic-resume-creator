@@ -10,7 +10,60 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { loadPrefs, savePrefs } from "../lib/prefs";
 import { Icon } from "./Icon";
+
+// ------------------------------------------------------------------ collapsible panel
+
+/** A titled section that can be collapsed and expanded; remembers its state on this device. */
+export function Panel({
+  id,
+  title,
+  icon,
+  extra,
+  defaultOpen = true,
+  className = "",
+  flat = false,
+  children,
+}: {
+  id: string;
+  title: ReactNode;
+  icon?: Parameters<typeof Icon>[0]["name"];
+  extra?: ReactNode; // shown on the right of the header (e.g. a count)
+  defaultOpen?: boolean;
+  className?: string;
+  flat?: boolean; // a step in the left column (no card border)
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(() => {
+    const closed = loadPrefs().closed;
+    return closed.includes(id) ? false : closed.includes(`open:${id}`) ? true : defaultOpen;
+  });
+  const bodyId = useId();
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    const closed = loadPrefs().closed.filter((x) => x !== id && x !== `open:${id}`);
+    savePrefs({ closed: next ? (defaultOpen ? closed : [...closed, `open:${id}`]) : [...closed, id] });
+  };
+  return (
+    <section className={`${flat ? "panel-section flat" : "card"} panel ${open ? "is-open" : "is-closed"} ${className}`}>
+      <button type="button" className="panel-head" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+        {icon && <Icon name={icon} size={16} />}
+        <span className="panel-title grow">{title}</span>
+        {extra && <span className="panel-extra">{extra}</span>}
+        <span className="panel-chevron" aria-hidden="true">
+          <Icon name="chevron" size={14} />
+        </span>
+      </button>
+      {open && (
+        <div className="panel-body" id={bodyId}>
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
 
 // ------------------------------------------------------------------ toasts
 

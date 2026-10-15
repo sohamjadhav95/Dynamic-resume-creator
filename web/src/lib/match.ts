@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { extractKeywords, matchKeywords, matchScore, mergeKeywords, type Keyword, type KeywordMatch } from "./keywords";
-import { matchText, type Resume } from "./schema";
+import { resumeText, type Resume } from "./schema";
 
 export interface MatchInfo {
   keywords: Keyword[];
@@ -13,8 +13,8 @@ export function computeMatch(resume: Resume, jd: string, aiKeywords?: Keyword[],
   if (jd.trim().length < 30) return null;
   const keywords = mergeKeywords(extractKeywords(jd), aiKeywords);
   if (!keywords.length) return null;
-  const matches = matchKeywords(keywords, matchText(resume));
-  const base = master && master !== resume ? matchScore(matchKeywords(keywords, matchText(master))) : null;
+  const matches = matchKeywords(keywords, resumeText(resume));
+  const base = master && master !== resume ? matchScore(matchKeywords(keywords, resumeText(master))) : null;
   return { keywords, matches, score: matchScore(matches), base };
 }
 

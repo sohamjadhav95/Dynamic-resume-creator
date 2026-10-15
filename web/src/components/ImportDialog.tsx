@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { streamAi } from "../lib/api";
 import { processResumeFile, heuristicParse, tryJson } from "../lib/importing";
-import { normalizeResume, type Resume, type SourceFile } from "../lib/schema";
+import { normalizeResume, type Resume } from "../lib/schema";
 import { Icon } from "./Icon";
 import { Dialog, useToast } from "./ui";
 
@@ -23,12 +23,9 @@ export function ImportDialog({
   const abort = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const structure = async (raw: string, source?: SourceFile) => {
+  const structure = async (raw: string) => {
     setError("");
-    const finish = (r: Resume) => {
-      if (source) r.source = source;
-      onDone(r);
-    };
+    const finish = (r: Resume) => onDone(r);
     const json = tryJson(raw);
     if (json) {
       finish(json);
@@ -36,12 +33,6 @@ export function ImportDialog({
     }
     if (raw.trim().length < 40) {
       setError("That's too short to be a resume. Paste the whole thing.");
-      return;
-    }
-    if (source) {
-      // The file itself is what gets tailored, so the quick (non-AI) parser is enough here: it only
-      // fills the optional template view. Instant, and it works even when the AI is busy.
-      finish(heuristicParse(raw));
       return;
     }
     setBusy("Reading your resume with AI…");
@@ -82,8 +73,7 @@ export function ImportDialog({
     try {
       const proc = await processResumeFile(file);
       setBusy(null);
-      if (proc.warning) toast({ message: proc.warning });
-      await structure(proc.text, proc.source);
+      await structure(proc.text);
     } catch (e) {
       setBusy(null);
       setError((e as Error).message);
@@ -93,7 +83,7 @@ export function ImportDialog({
   return (
     <Dialog
       title="Bring in your resume"
-      subtitle="Upload your PDF or Word file and we keep its exact design: tailoring only rewrites the words inside it."
+      subtitle="Upload your resume or a JSON export. AI splits it into sections you can edit on the page. Nothing is invented."
       onClose={() => {
         abort.current?.abort();
         onClose();
@@ -141,7 +131,7 @@ export function ImportDialog({
           <Icon name="upload" size={28} />
           <p style={{ margin: "10px 0 4px", fontWeight: 600 }}>Drop your resume here, or click to choose</p>
           <p className="hint" style={{ margin: 0 }}>
-            PDF or Word (.docx) keeps your design · text or a JSON export from this app also work · max 3 MB
+            PDF, Word (.docx), text, or a JSON file (e.g. your master_resume.json) · max 3 MB
           </p>
           <input
             ref={fileInput}

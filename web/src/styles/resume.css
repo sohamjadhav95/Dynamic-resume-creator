@@ -119,6 +119,109 @@
 .r-text {
   margin: 0;
 }
+.r-contact-line {
+  font-size: 0.82em;
+}
+.r-badge-bar {
+  font-weight: 700;
+  font-size: 0.88em;
+  margin-top: 4px;
+}
+
+/* ---------- Template: Original (matches the owner's PDF: Arial, A4, 15 mm sides, 10 mm top) */
+.tpl-original {
+  --fs: calc(8.5pt - var(--d) * 0.2pt);
+  --lh: calc(1.27 - var(--d) * 0.02);
+  --gap: calc(9pt - var(--d) * 1pt);
+  padding: calc(10mm - var(--d) * 0.8mm) calc(15mm - var(--d) * 0.8mm);
+  font-family: Arial, "Liberation Sans", Helvetica, sans-serif;
+  font-feature-settings: normal;
+  color: #000;
+}
+.tpl-original .r-header {
+  text-align: center;
+  margin-bottom: calc(var(--gap) * 0.6);
+}
+.tpl-original .r-name {
+  font-size: 2em;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+.tpl-original .r-contact {
+  justify-content: center;
+  font-size: 0.9em;
+  color: #000;
+  margin-top: 0.35em;
+}
+.tpl-original .r-contact .sep {
+  color: #000;
+}
+.tpl-original .r-headline,
+.tpl-original .r-badge-bar {
+  font-size: 1.06em;
+  font-weight: 700;
+  color: #000;
+  margin-top: 0.3em;
+}
+.tpl-original .r-section-title {
+  font-size: 1.06em;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #000;
+  border-bottom: 0.75pt solid #000;
+  padding-bottom: 0.1em;
+  margin: 0 0 0.5em;
+}
+.tpl-original .r-text {
+  text-align: justify;
+}
+.tpl-original .r-skill-line {
+  font-size: 1.06em;
+}
+.tpl-original .r-skill-line strong {
+  font-weight: 700;
+}
+.tpl-original .r-entry + .r-entry {
+  margin-top: calc(var(--gap) * 0.55);
+}
+.tpl-original .r-entry-head {
+  font-size: 1.06em;
+}
+.tpl-original .r-entry-title,
+.tpl-original .r-dates {
+  font-weight: 700;
+  color: #000;
+  font-size: 1em;
+}
+.tpl-original .r-role {
+  font-weight: 700;
+}
+.tpl-original .r-entry-sub {
+  font-style: normal;
+  color: #000;
+}
+.tpl-original .r-stack {
+  font-style: italic;
+  font-size: 0.94em;
+  color: #000;
+}
+.tpl-original .r-bullets {
+  list-style: none;
+  padding-left: 1.06em;
+  margin-top: 0.15em;
+}
+.tpl-original .r-bullets li {
+  position: relative;
+  text-align: justify;
+  margin: 0 0 0.3em;
+  padding-left: 0;
+}
+.tpl-original .r-bullets li::before {
+  content: "•";
+  position: absolute;
+  left: -0.75em;
+}
 
 /* ---------- Template: Modern */
 .tpl-modern .r-header {
@@ -233,8 +336,14 @@
   border-color: #c22f37;
   color: #c22f37;
 }
+/* Floats over the page (takes no space), so the page meter matches what prints. */
+.r-entry {
+  position: relative;
+}
 .add-bullet {
-  margin: 0.25em 0 0 1.1em;
+  position: absolute;
+  right: -30px;
+  bottom: 0;
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -310,41 +419,5 @@
   }
   .r-section-title {
     break-after: avoid;
-  }
-}
-
-/* Word (.docx) Preview */
-.docx-viewer-root {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  min-height: 100%;
-}
-
-.docx-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-}
-
-.docx-container .docx-wrapper {
-  background: transparent !important;
-  padding: 0 !important;
-}
-
-.docx-container section.docx-page,
-.docx-container .docx-wrapper > section {
-  background: #ffffff !important;
-  box-shadow: var(--shadow-sheet, 0 16px 36px -12px rgba(27, 26, 23, 0.22)) !important;
-  margin-bottom: 24px !important;
-  border-radius: 2px !important;
-  color: #111111 !important;
-}
-
-@media print {
-  .docx-container section.docx-page {
-    box-shadow: none !important;
-    margin: 0 !important;
   }
 }

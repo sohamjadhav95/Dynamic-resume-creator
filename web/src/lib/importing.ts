@@ -2,43 +2,27 @@
 // Text extraction runs in the browser. Structuring uses AI, with a heuristic parser as backup.
 
 import { extractFile } from "./api";
-import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume, type SourceFile } from "./schema";
+import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume } from "./schema";
 
 export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 
-export interface ProcessedFile {
-  text: string;
-  source?: SourceFile; // set when the original design can be kept and edited in place
-  warning?: string;
-}
-
 /**
- * Reads an uploaded file. PDF and Word files are kept byte-for-byte so tailoring can edit them in
- * place; the server checks them and returns their text. Anything else is read as text.
+ * Gets the text out of an uploaded resume. PDF and Word files are read on the server (which keeps
+ * lines, bullets and columns in order); if that fails, the browser reads them instead.
  */
-export async function processResumeFile(file: File): Promise<ProcessedFile> {
+export async function processResumeFile(file: File): Promise<{ text: string }> {
   const name = file.name.toLowerCase();
   if (name.endsWith(".doc")) throw new Error("Old .doc files can't be read. In Word, use Save As → .docx (or PDF) first.");
   const isDoc = name.endsWith(".pdf") || name.endsWith(".docx") || file.type === "application/pdf";
-  if (!isDoc) return { text: await fileToText(file) };
-  if (file.size > MAX_UPLOAD_BYTES) throw new Error("That file is over 3 MB. Try exporting a smaller PDF.");
-
-  const data = await fileToBase64(file);
-  try {
-    const info = await extractFile(file.name, data);
-    if (info.editable === 0) {
-      return {
-        text: info.text,
-        warning: "We couldn't find bullet points to rewrite in this file, so the app's template will be used instead.",
-      };
+  if (isDoc && file.size <= MAX_UPLOAD_BYTES) {
+    try {
+      const info = await extractFile(file.name, await fileToBase64(file));
+      if (info.text.trim().length > 40) return { text: info.text };
+    } catch (err) {
+      console.warn("Server could not read the file, reading it in the browser instead:", err);
     }
-    return { text: info.text, source: { type: info.file_type, name: file.name, data, text: info.text, font: info.font || undefined } };
-  } catch (err) {
-    // Server unreachable or the file is unusual: fall back to reading the text in the browser.
-    console.warn("Server could not read the file, reading it in the browser instead:", err);
-    const text = await fileToText(file);
-    return { text, warning: "We couldn't keep your file's design this time, so the app's template will be used." };
   }
+  return { text: await fileToText(file) };
 }
 
 export async function fileToText(file: File): Promise<string> {

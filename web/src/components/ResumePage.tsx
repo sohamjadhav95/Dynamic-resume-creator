@@ -15,7 +15,20 @@ const TITLES: Record<Exclude<SectionKey, "custom">, string> = {
   education: "Education",
 };
 
+// The "Original" template copies the layout of the owner's PDF: full section names, company on the
+// first line and role on the second, "title | detail" for other entries.
+const LONG_TITLES: Record<Exclude<SectionKey, "custom">, string> = {
+  summary: "Professional Summary",
+  skills: "Technical Skills",
+  experience: "Professional Experience",
+  projects: "Projects",
+  certifications: "Certifications & Achievements",
+  education: "Education",
+};
+
 export function ResumePage({ resume, editable = true }: { resume: Resume; editable?: boolean }) {
+  const original = resume.layout.template === "original";
+  const titles = original ? LONG_TITLES : TITLES;
   const { edit } = useStore();
   const { setSelected } = useSelection();
   const latest = useRef(resume);
@@ -145,7 +158,7 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
     summary: () =>
       resume.summary || editable ? (
         <section className={`r-section ${resume.summary ? "" : "is-empty"}`} key="summary">
-          <h2 className="r-section-title">{TITLES.summary}</h2>
+          <h2 className="r-section-title">{titles.summary}</h2>
           {text("summary", "A short summary of who you are and what you do best", "r-text", "p")}
         </section>
       ) : null,
@@ -154,7 +167,7 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
       if (!groups.length) return null;
       return (
         <section className="r-section" key="skills">
-          <h2 className="r-section-title">{TITLES.skills}</h2>
+          <h2 className="r-section-title">{titles.skills}</h2>
           {groups.map(({ g, i }) => (
             <div className="r-skill-line" key={g.id}>
               <strong>{text(`skills.${i}.category`, "Category")}:</strong> {list(`skills.${i}.items`, "Skill, skill, skill")}
@@ -168,17 +181,27 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
       if (!items.length) return null;
       return (
         <section className="r-section" key="experience">
-          <h2 className="r-section-title">{TITLES.experience}</h2>
+          <h2 className="r-section-title">{titles.experience}</h2>
           {items.map(({ e, i }) => (
             <div className="r-entry" key={e.id}>
-              <div className="r-entry-head">
-                <span>
-                  {text(`experience.${i}.role`, "Job title", "r-entry-title")}
-                  {(e.company || editable) && <span className="r-entry-title"> · </span>}
-                  {text(`experience.${i}.company`, "Company", "r-entry-title")}
-                </span>
-                {text(`experience.${i}.dates`, "Dates", "r-dates")}
-              </div>
+              {original ? (
+                <>
+                  <div className="r-entry-head">
+                    {text(`experience.${i}.company`, "Company", "r-entry-title")}
+                    {text(`experience.${i}.dates`, "Dates", "r-dates")}
+                  </div>
+                  <div className="r-role">{text(`experience.${i}.role`, "Job title")}</div>
+                </>
+              ) : (
+                <div className="r-entry-head">
+                  <span>
+                    {text(`experience.${i}.role`, "Job title", "r-entry-title")}
+                    {(e.company || editable) && <span className="r-entry-title"> · </span>}
+                    {text(`experience.${i}.company`, "Company", "r-entry-title")}
+                  </span>
+                  {text(`experience.${i}.dates`, "Dates", "r-dates")}
+                </div>
+              )}
               {(e.location || editable) && (
                 <div className="r-entry-sub opt">{text(`experience.${i}.location`, "Location (optional)")}</div>
               )}
@@ -193,7 +216,7 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
       if (!items.length) return null;
       return (
         <section className="r-section" key="projects">
-          <h2 className="r-section-title">{TITLES.projects}</h2>
+          <h2 className="r-section-title">{titles.projects}</h2>
           {items.map(({ p, i }) => (
             <div className="r-entry" key={p.id}>
               <div className="r-entry-head">
@@ -228,8 +251,8 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
                   <span>
                     {text(`custom_sections.${si}.items.${ii}.title`, "Title", "r-entry-title")}
                     {(it.subtitle || editable) && (
-                      <span className="opt r-entry-sub">
-                        {" · "}
+                      <span className={original ? "opt r-entry-title" : "opt r-entry-sub"}>
+                        {original ? "  |  " : " · "}
                         {text(`custom_sections.${si}.items.${ii}.subtitle`, "detail (optional)")}
                       </span>
                     )}
@@ -246,7 +269,7 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
     certifications: () =>
       resume.certifications.length ? (
         <section className="r-section" key="certifications">
-          <h2 className="r-section-title">{TITLES.certifications}</h2>
+          <h2 className="r-section-title">{titles.certifications}</h2>
           <p className="r-text">{list("certifications", "Certification", " • ")}</p>
         </section>
       ) : null,
@@ -255,17 +278,27 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
       if (!items.length) return null;
       return (
         <section className="r-section" key="education">
-          <h2 className="r-section-title">{TITLES.education}</h2>
+          <h2 className="r-section-title">{titles.education}</h2>
           {items.map(({ e, i }) => (
             <div className="r-entry" key={e.id}>
-              <div className="r-entry-head">
-                <span>
-                  {text(`education.${i}.degree`, "Degree", "r-entry-title")}
-                  <span> · </span>
-                  {text(`education.${i}.institution`, "School")}
-                </span>
-                {text(`education.${i}.dates`, "Dates", "r-dates")}
-              </div>
+              {original ? (
+                <>
+                  <div className="r-entry-head">
+                    {text(`education.${i}.degree`, "Degree", "r-entry-title")}
+                    {text(`education.${i}.dates`, "Dates", "r-dates")}
+                  </div>
+                  <div className="r-school">{text(`education.${i}.institution`, "School")}</div>
+                </>
+              ) : (
+                <div className="r-entry-head">
+                  <span>
+                    {text(`education.${i}.degree`, "Degree", "r-entry-title")}
+                    <span> · </span>
+                    {text(`education.${i}.institution`, "School")}
+                  </span>
+                  {text(`education.${i}.dates`, "Dates", "r-dates")}
+                </div>
+              )}
               {(e.details || editable) && <div className="r-entry-sub opt">{text(`education.${i}.details`, "Details (optional)")}</div>}
             </div>
           ))}
@@ -279,7 +312,7 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
       <header className="r-header">
         {text("basics.name", "Your name", "r-name", "h1")}
         {b.contact_line ? (
-          <div className="r-contact" style={{ fontSize: "0.82em", marginTop: 2, color: "var(--muted)" }}>
+          <div className="r-contact r-contact-line">
             {text("basics.contact_line", "email@example.com | linkedin... | +1 234...")}
           </div>
         ) : (
@@ -299,7 +332,7 @@ export function ResumePage({ resume, editable = true }: { resume: Resume; editab
           </div>
         )}
         {b.sub_badge ? (
-          <div className="r-badge-bar" style={{ fontWeight: 700, fontSize: "0.88em", marginTop: 4 }}>
+          <div className="r-badge-bar">
             {text("basics.sub_badge", "GSoC | Publications | Systems")}
           </div>
         ) : (
