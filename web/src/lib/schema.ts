@@ -19,7 +19,7 @@ export const SECTION_LABELS: Record<SectionKey, string> = {
   education: "Education",
 };
 
-export const DEFAULT_ORDER: SectionKey[] = [
+const DEFAULT_ORDER: SectionKey[] = [
   "summary",
   "skills",
   "experience",
@@ -127,7 +127,7 @@ export function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export function defaultLayout(): Layout {
+function defaultLayout(): Layout {
   return { order: [...DEFAULT_ORDER], hidden: [], template: "original", page: "A4", density: 0, accent: "#1B1A17" };
 }
 

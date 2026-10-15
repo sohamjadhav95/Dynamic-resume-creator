@@ -69,7 +69,7 @@ export function aliasesFor(term: string): string[] {
   return [...variants];
 }
 
-export function canonical(term: string): string {
+function canonical(term: string): string {
   return BY_ALIAS.get(term.toLowerCase())?.canonical ?? term.trim();
 }
 

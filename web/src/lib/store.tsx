@@ -39,7 +39,7 @@ export function activeResume(s: State): Resume {
   return s.ws.versions.find((v) => v.id === s.activeId)?.data ?? s.ws.master;
 }
 
-export function activeVersion(s: State): Version | undefined {
+function activeVersion(s: State): Version | undefined {
   return s.ws.versions.find((v) => v.id === s.activeId);
 }
 

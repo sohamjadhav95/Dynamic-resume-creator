@@ -24,7 +24,7 @@ export interface Workspace {
 
 // ------------------------------------------------------------------ browser (guest)
 
-export const LOCAL_KEY = "tailor.workspace.v2";
+const LOCAL_KEY = "tailor.workspace.v2";
 
 /** Signed-in users also keep a copy in the browser, so the app works if the cloud is unreachable. */
 export const userCacheKey = (userId: string) => `${LOCAL_KEY}:${userId}`;

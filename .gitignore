@@ -20,3 +20,4 @@ supabase/.temp/
 *.tsbuildinfo
 public/
 scripts/benchmark_results.json
+.claude/

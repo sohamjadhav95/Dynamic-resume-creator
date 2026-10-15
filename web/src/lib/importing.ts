@@ -4,7 +4,7 @@
 import { extractFile } from "./api";
 import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume } from "./schema";
 
-export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 
 /**
  * Gets the text out of an uploaded resume. PDF and Word files are read on the server (which keeps
@@ -25,7 +25,7 @@ export async function processResumeFile(file: File): Promise<{ text: string }> {
   return { text: await fileToText(file) };
 }
 
-export async function fileToText(file: File): Promise<string> {
+async function fileToText(file: File): Promise<string> {
   const name = file.name.toLowerCase();
   if (file.size > 5 * 1024 * 1024) throw new Error("That file is over 5 MB. Try uploading a smaller file.");
   if (name.endsWith(".pdf") || file.type === "application/pdf") return pdfToText(file);

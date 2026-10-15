@@ -5,16 +5,16 @@ import { useStore } from "../lib/store";
 import { Icon } from "./Icon";
 import { ResumePage } from "./ResumePage";
 
-export const PAGE_MM = { A4: { w: 210, h: 297 }, Letter: { w: 215.9, h: 279.4 } };
+const PAGE_MM = { A4: { w: 210, h: 297 }, Letter: { w: 215.9, h: 279.4 } };
 
-export function marginMm(r: Resume): number {
+function marginMm(r: Resume): number {
   const d = r.layout.density;
   if (r.layout.template === "original") return 15 - d * 0.8;
   return r.layout.template === "compact" ? 10.5 - d * 1.0 : 13 - d * 1.2;
 }
 
 /** CSS margin for printing: the Original template has a smaller top/bottom margin, like the source PDF. */
-export function pageMargin(r: Resume): string {
+function pageMargin(r: Resume): string {
   if (r.layout.template === "original") {
     const d = r.layout.density;
     return `${(10 - d * 0.8).toFixed(1)}mm ${marginMm(r).toFixed(1)}mm`;
