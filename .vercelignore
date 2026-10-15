@@ -1,5 +1,20 @@
+# Local environments and caches (never deploy these)
 .venv
+.venv*
+venv
+venv*
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.claude
+.env
+.env.*
 web/node_modules
+web/dist
+
+# Not needed at runtime
 tests
 examples
+docs
+supabase
 .github
