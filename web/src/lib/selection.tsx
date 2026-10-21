@@ -1,4 +1,5 @@
-// Which bullet the person is working on (drives the "Rewrite" card).
+// What the person is working on: the field open in the page editor, and the bullet the
+// "Improve a bullet" card rewrites.
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
@@ -7,14 +8,24 @@ export interface Selected {
   context: string; // e.g. "Software Engineer at Northwind"
 }
 
-const Ctx = createContext<{ selected: Selected | null; setSelected: (s: Selected | null) => void }>({
+interface SelectionState {
+  selected: Selected | null;
+  setSelected: (s: Selected | null) => void;
+  editing: string | null; // path of the field open in the page editor
+  setEditing: (path: string | null) => void;
+}
+
+const Ctx = createContext<SelectionState>({
   selected: null,
   setSelected: () => {},
+  editing: null,
+  setEditing: () => {},
 });
 
 export function SelectionProvider({ children }: { children: ReactNode }) {
   const [selected, setSelected] = useState<Selected | null>(null);
-  const value = useMemo(() => ({ selected, setSelected }), [selected]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const value = useMemo(() => ({ selected, setSelected, editing, setEditing }), [selected, editing]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

@@ -54,7 +54,7 @@ function aiPayload(master: Resume) {
 }
 
 export function App() {
-  const { state, dispatch, resume, version, edit } = useStore();
+  const { state, dispatch, version, edit } = useStore();
   const toast = useToast();
   const layout = useLayoutMode();
 
@@ -273,21 +273,57 @@ export function App() {
     abortRef.current?.abort();
   };
 
-  // ---------------------------------------------------------------- print / export
+  // ---------------------------------------------------------------- PDF
+  // The PDF is generated from the page engine (no browser print dialog), see Canvas.
   const print = useCallback(() => {
-    const old = document.title;
-    const who = resume.basics.name || "Resume";
-    const forJob = version ? ` - ${version.company || version.job_title}` : "";
-    document.title = `${who}${forJob} Resume`.replace(/\s+/g, " ");
-    const restore = () => {
-      document.title = old;
-      window.removeEventListener("afterprint", restore);
-    };
-    window.addEventListener("afterprint", restore);
-    (document.activeElement as HTMLElement | null)?.blur?.();
     if (layout === "narrow") setMobileTab("page");
-    window.setTimeout(() => window.print(), 50);
-  }, [resume.basics.name, version, layout]);
+    window.dispatchEvent(new Event("tailor:download-pdf"));
+  }, [layout]);
+
+  // ---------------------------------------------------------------- columns (resizable, collapsible)
+  const [cols, setCols] = useState(() => {
+    const p = loadPrefs();
+    return { leftW: p.leftW, rightW: p.rightW, leftClosed: p.leftClosed, rightClosed: p.rightClosed };
+  });
+  const updateCols = useCallback((patch: Partial<typeof cols>, save = true) => {
+    setCols((c) => {
+      const next = { ...c, ...patch };
+      if (save) savePrefs(next);
+      return next;
+    });
+  }, []);
+  const startResize = (side: "left" | "right") => (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = side === "left" ? cols.leftW : cols.rightW;
+    let last = startW;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      last = Math.round(Math.max(260, Math.min(620, side === "left" ? startW + dx : startW - dx)));
+      updateCols(side === "left" ? { leftW: last } : { rightW: last }, false);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("resizing");
+      updateCols(side === "left" ? { leftW: last } : { rightW: last });
+    };
+    document.body.classList.add("resizing");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  // "AI rewrite" on a bullet opens the Match & AI column wherever it lives.
+  useEffect(() => {
+    const open = () => {
+      if (layout === "wide") updateCols({ rightClosed: false });
+      else if (layout === "medium") {
+        updateCols({ leftClosed: false });
+        setSideTab("insights");
+      } else setMobileTab("insights");
+    };
+    window.addEventListener("tailor:open-panel", open);
+    return () => window.removeEventListener("tailor:open-panel", open);
+  }, [layout, updateCols]);
 
   // ---------------------------------------------------------------- shortcuts
   useEffect(() => {
@@ -419,8 +455,37 @@ export function App() {
         onSettings={() => setDialog("settings")}
         onImport={() => setDialog("import-upload")}
       />
-      <div className="studio" data-side={sideTab} data-mobile={mobileTab}>
+      <div
+        className="studio"
+        data-side={sideTab}
+        data-mobile={mobileTab}
+        style={
+          layout === "wide"
+            ? {
+                gridTemplateColumns: `${cols.leftClosed ? 44 : cols.leftW}px minmax(0, 1fr) ${cols.rightClosed ? 44 : cols.rightW}px`,
+              }
+            : layout === "medium"
+              ? { gridTemplateColumns: `${cols.leftClosed ? 44 : cols.leftW}px minmax(0, 1fr)` }
+              : undefined
+        }
+      >
+        {layout !== "narrow" && cols.leftClosed ? (
+          <aside className="side left rail" aria-label="Build your resume (collapsed)">
+            <button className="rail-btn" onClick={() => updateCols({ leftClosed: false })} title="Show the Build panel">
+              <Icon name="chevronRight" size={16} />
+              <span>{layout === "medium" ? "Build · Match & AI" : "Build"}</span>
+            </button>
+          </aside>
+        ) : (
         <aside className="side left" aria-label="Build your resume">
+          {layout !== "narrow" && (
+            <div className="col-head">
+              <span className="grow">{layout === "medium" ? "Build · Match & AI" : "Build"}</span>
+              <button className="icon-btn sm" onClick={() => updateCols({ leftClosed: true })} title="Collapse this panel" aria-label="Collapse the Build panel">
+                <Icon name="chevron" size={14} className="rot90" />
+              </button>
+            </div>
+          )}
           {layout === "medium" && (
             <div className="side-tabs">
               <div className="segmented" role="tablist" aria-label="Panel" style={{ width: "100%" }}>
@@ -449,11 +514,48 @@ export function App() {
           </div>
           {layout !== "wide" && <div className="insights">{insightsPanel}</div>}
         </aside>
-        <Canvas title={title} onPrint={print} />
-        {layout === "wide" && (
-          <aside className="side right" aria-label="Match and AI tools">
-            {insightsPanel}
-          </aside>
+        )}
+        <Canvas title={title} />
+        {layout === "wide" &&
+          (cols.rightClosed ? (
+            <aside className="side right rail" aria-label="Match and AI tools (collapsed)">
+              <button className="rail-btn" onClick={() => updateCols({ rightClosed: false })} title="Show the Match & AI panel">
+                <Icon name="chevron" size={16} className="rot90" />
+                <span>Match & AI {progress ? "•" : ""}</span>
+              </button>
+            </aside>
+          ) : (
+            <aside className="side right" aria-label="Match and AI tools">
+              <div className="col-head">
+                <button className="icon-btn sm" onClick={() => updateCols({ rightClosed: true })} title="Collapse this panel" aria-label="Collapse the Match and AI panel">
+                  <Icon name="chevronRight" size={14} />
+                </button>
+                <span className="grow">Match & AI</span>
+              </div>
+              {insightsPanel}
+            </aside>
+          ))}
+        {layout !== "narrow" && !cols.leftClosed && (
+          <div
+            className="col-resizer"
+            style={{ left: cols.leftW - 3 }}
+            onPointerDown={startResize("left")}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the Build panel"
+            title="Drag to resize"
+          />
+        )}
+        {layout === "wide" && !cols.rightClosed && (
+          <div
+            className="col-resizer"
+            style={{ right: cols.rightW - 3 }}
+            onPointerDown={startResize("right")}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the Match and AI panel"
+            title="Drag to resize"
+          />
         )}
       </div>
       <nav className="mobile-tabs" role="tablist" aria-label="Sections">

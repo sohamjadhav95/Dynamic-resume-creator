@@ -19,10 +19,24 @@ template you edit by clicking any text, and **PDF** saves exactly what you see.
    tools or terms your resume doesn't show (bullets: only from that same job or project). A refused line gets one
    more AI try with the reason; otherwise the original stays. Refused lines are listed under Tips.
 5. **Edit and export.** Click any text on the page to change it; click a missing keyword to swap it into your skills.
-   The page meter shows "1 page" or how many lines you are over.
+   **PDF** downloads exactly the page you see.
 
-The default **Original** template reproduces the owner's PDF layout (Arial, A4, 15 mm sides, full uppercase section
-names, company on line 1 and role on line 2, italic tech stacks).
+## The page engine (why the format never breaks)
+
+The page is **not** HTML printed by the browser (that changes with the browser, print settings, installed fonts and
+headers/footers, which is what used to push resumes to two pages). Instead `web/src/lib/page/`:
+
+1. **measures** every word with the exact metrics of the PDF Helvetica family (the same widths as Arial), with no
+   kerning, so measured width = drawn width;
+2. **lays out** the resume itself: justified bullets with a hanging indent, bold "Category:" labels, dates on the
+   right, a rule under each section title, and records which field every word belongs to;
+3. **keeps it on one page**: if content is too long it tightens spacing step by step, then text size (to 92% at most),
+   and only then flows onto a second page (the meter says by how many lines);
+4. draws that one layout twice: as SVG on screen (click any word to edit its field) and as a real PDF with `pdf-lib`
+   (selectable text in reading order, readable by applicant tracking systems).
+
+The default **Original** style reproduces the owner's PDF (measured from the file: A4, 15 mm sides, 17 pt name,
+7.6 pt contact line, 9 pt headings with a rule, 8.5 pt justified body). Classic, Modern and Compact are variations.
 
 ## What it does
 
@@ -36,10 +50,11 @@ names, company on line 1 and role on line 2, italic tech stacks).
   The old "invent a project for this job" slot is now **Project ideas**: suggestions you could build, shown on the side.
 - **Instant match score** (runs in the browser, no AI needed): required vs nice-to-have keywords, found and missing,
   and the job post with highlights. Click a missing skill to add it, but only if you really have it.
-- **Click-to-edit page** with undo/redo, Enter for a new bullet, AI rewrite of any bullet (stronger, shorter,
-  add a keyword, fix grammar).
-- **Page meter** ("1 page ✓" / "over by 3 lines") and **Fit to 1 page**. 3 ATS-safe templates, A4/Letter, spacing and
-  heading color.
+- **Click-to-edit page**: click any text to open a small editor right there (the page updates as you type), with
+  undo/redo, move / add / delete bullets and AI rewrite of any bullet (stronger, shorter, add a keyword, fix grammar).
+- **Exact page meter** ("1 page" / "over by 3 lines") from the page engine, automatic fit to one page, 4 styles,
+  A4/Letter, spacing and heading color.
+- **Resizable, collapsible panels**: drag the edge of the side columns, or collapse them to a slim rail.
 - **Import** a PDF, Word file, pasted text or JSON; AI splits it into sections (with a non-AI parser as backup).
 - **Accounts are optional**: guests save in the browser; signing in (Google or email link) saves to the cloud.
   The first sign-in moves the guest resume into the account.
@@ -79,6 +94,7 @@ was blocked, rate-limited or took minutes. Change the order without code via the
 | Part | Tech | Where |
 | --- | --- | --- |
 | Web app | React 19 + TypeScript + Vite, plain CSS design tokens | `web/` → Vercel CDN |
+| Page + PDF | Own layout engine (Helvetica metrics), SVG on screen, `pdf-lib` for the PDF | `web/src/lib/page/` |
 | API | FastAPI (stateless), streaming Server-Sent Events | `backend/`, entry `api/index.py` → Vercel Python function |
 | AI | Gemini (`google-genai`) → Groq (OpenAI-compatible HTTP), both free tiers | `backend/ai/` |
 | File reading | PyMuPDF (PDF) and python-docx (Word) read uploaded resumes; `backend/fileedit/` can also edit a file in place (API only) | `backend/fileedit/` |

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { guessJob } from "../lib/keywords";
 import { SECTION_LABELS, clone, uid, type Resume, type SectionKey, type TemplateId } from "../lib/schema";
+import { useSelection } from "../lib/selection";
 import { MASTER, useStore } from "../lib/store";
-import { focusPathSoon } from "./Editable";
 import { Icon } from "./Icon";
 import { Panel } from "./ui";
 
@@ -137,6 +137,7 @@ const FIRST_FIELD: Record<ListKey, string> = { experience: "role", projects: "na
 
 function SectionsCard() {
   const { resume, edit, state } = useStore();
+  const { setEditing } = useSelection();
   const [open, setOpen] = useState<string | null>(null);
   const hidden = new Set(resume.layout.hidden);
   const L = resume.layout;
@@ -171,7 +172,7 @@ function SectionsCard() {
     const next = { ...resume, [key]: [...(resume[key] as any[]), item] } as Resume;
     next.layout = { ...L, hidden: L.hidden.filter((x) => x !== key) };
     edit(next);
-    focusPathSoon(`${key}.${(resume[key] as any[]).length}.${FIRST_FIELD[key]}`);
+    setEditing(`${key}.${(resume[key] as any[]).length}.${FIRST_FIELD[key]}`);
   };
 
   const addCustom = () => {
@@ -183,7 +184,7 @@ function SectionsCard() {
     });
     next.layout.hidden = next.layout.hidden.filter((x) => x !== "custom");
     edit(next);
-    focusPathSoon(`custom_sections.${resume.custom_sections.length}.items.0.title`);
+    setEditing(`custom_sections.${resume.custom_sections.length}.items.0.title`);
   };
 
   const count = (k: SectionKey): number | null => {
@@ -295,7 +296,7 @@ function SectionsCard() {
                             const next = clone(resume);
                             next.custom_sections[i].items.push({ id: uid("ci"), title: "", subtitle: "", dates: "", bullets: [] });
                             edit(next);
-                            focusPathSoon(`custom_sections.${i}.items.${s.items.length}.title`);
+                            setEditing(`custom_sections.${i}.items.${s.items.length}.title`);
                           }}
                         >
                           <Icon name="plus" size={14} />

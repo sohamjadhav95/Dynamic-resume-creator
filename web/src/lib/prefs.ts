@@ -7,10 +7,23 @@ export interface Prefs {
   geminiKey: string;
   zoom: number; // 0 = fit to width
   closed: string[]; // ids of panel sections the person collapsed
+  leftW: number; // width of the left column (px)
+  rightW: number; // width of the right column (px)
+  leftClosed: boolean;
+  rightClosed: boolean;
 }
 
 const KEY = "tailor.prefs.v1";
-const DEFAULTS: Prefs = { theme: "system", geminiKey: "", zoom: 0, closed: [] };
+const DEFAULTS: Prefs = {
+  theme: "system",
+  geminiKey: "",
+  zoom: 0,
+  closed: [],
+  leftW: 330,
+  rightW: 360,
+  leftClosed: false,
+  rightClosed: false,
+};
 
 export function loadPrefs(): Prefs {
   try {

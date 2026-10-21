@@ -2,7 +2,6 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/fraunces";
 import "./styles/tokens.css";
 import "./styles/app.css";
-import "./styles/resume.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

@@ -509,12 +509,147 @@ button.chip:hover {
   overflow: auto;
   padding: 28px 24px 80px;
   display: flex;
-  justify-content: center;
+  justify-content: safe center; /* a zoomed-in page can still be scrolled to its left edge */
   align-items: flex-start;
 }
-.print-root {
-  box-shadow: var(--shadow-sheet);
+
+/* ---------------------------------------------------------------- the page (drawn by the page engine) */
+.pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
   flex-shrink: 0;
+}
+.page {
+  position: relative;
+  background: #fff;
+  box-shadow: var(--shadow-sheet);
+}
+.page svg {
+  display: block;
+}
+.page .hit {
+  fill: transparent;
+  cursor: text;
+  outline: none;
+}
+.page .hit.on {
+  fill: rgba(194, 47, 55, 0.07);
+  stroke: rgba(194, 47, 55, 0.45);
+  stroke-width: 0.5;
+}
+.page .hit:focus-visible {
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+.canvas-hint {
+  margin: 0;
+  padding: 6px 16px 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+.field-editor {
+  position: absolute;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2, 0 10px 30px rgba(0, 0, 0, 0.18));
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.field-editor .textarea {
+  min-height: 38px;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.fe-head,
+.fe-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fe-head strong {
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- resizable, collapsible columns */
+.studio {
+  position: relative;
+}
+.col-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 18px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.side.right .col-head {
+  padding: 6px 18px 6px 10px;
+}
+.col-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 10;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+.col-resizer:hover,
+body.resizing .col-resizer {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.side.rail {
+  overflow: hidden;
+}
+.rail-btn {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+.rail-btn span {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.rail-btn:hover {
+  background: var(--surface-sunk);
+  color: var(--ink);
+}
+.rot90 {
+  transform: rotate(90deg);
 }
 
 .side-tabs {
@@ -1406,27 +1541,7 @@ details.options .body {
   color: var(--ink-3);
 }
 
-@media print {
-  .topbar,
-  .side,
-  .canvas-bar,
-  .mobile-tabs,
-  .toasts,
-  .overlay,
-  .skip-link {
-    display: none !important;
-  }
-  .app,
-  .studio,
-  .center,
-  .canvas {
-    display: block !important;
-    height: auto !important;
-    overflow: visible !important;
-    padding: 0 !important;
-    background: #fff !important;
-  }
-}
+
 
 /* ---------------------------------------------------------------- collapsible panels */
 .panel {
