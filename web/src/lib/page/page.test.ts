@@ -45,6 +45,9 @@ describe("page engine", () => {
     const over = layoutResume(huge).print;
     expect(over.pages.length).toBe(2);
     expect(over.overflowLines).toBeGreaterThan(0);
+    // Two pages anyway: keep the normal look instead of squeezing it.
+    expect(over.fontScale).toBe(1);
+    expect(over.tightened).toBe(false);
   });
 
   it("shows hints for empty fields on screen but never in the PDF", () => {
@@ -96,5 +99,34 @@ describe("page engine", () => {
     expect(print.pages[0].some((i) => i.kind === "rule")).toBe(false);
     const doc = await PDFDocument.load(await buildPdf(print, { title: "t", author: "a" }));
     expect(doc.getPageCount()).toBe(1);
+  });
+
+  it("follows the uploaded file's entry lines, header order and plain skills list", () => {
+    const base = normalizeResume(legacy);
+    const r = normalizeResume({
+      ...base,
+      skills: [{ category: "Clinical Skills", items: ["IV therapy", "Wound care"] }],
+      layout: {
+        ...base.layout,
+        template: "custom",
+        titles: { skills: "CLINICAL SKILLS" },
+        custom: {
+          badgeFirst: true,
+          datesBold: false,
+          entry: { line: "one", first: "a", join: " — " },
+          edu: { line: "one", first: "a", join: ", " },
+        },
+      },
+    });
+    const items = texts(layoutResume(r).print.pages[0]);
+    const y = (path: string) => items.find((t) => t.path === path)!.y;
+    const badge = items.find((t) => t.path === "basics.sub_badge" || t.path === "basics.headline")!;
+    const contact = items.find((t) => /^basics\.(contact_line|email|phone)$/.test(t.path ?? ""))!;
+    expect(badge.y).toBeLessThan(contact.y); // headline above the contact line
+    expect(y("experience.0.role")).toBe(y("experience.0.company")); // "Job title — Company" on one line
+    expect(items.some((t) => t.text === "—" && t.y === y("experience.0.role"))).toBe(true);
+    expect(items.find((t) => t.path === "experience.0.dates")!.font).toBe("regular");
+    expect(y("education.0.degree")).toBe(y("education.0.institution"));
+    expect(items.some((t) => t.path === "skills.0.category")).toBe(false); // no "Clinical Skills:" under CLINICAL SKILLS
   });
 });

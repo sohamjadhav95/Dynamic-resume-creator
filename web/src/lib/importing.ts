@@ -2,7 +2,8 @@
 // Text extraction runs in the browser. Structuring uses AI, with a heuristic parser as backup.
 
 import { extractFile } from "./api";
-import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume } from "./schema";
+import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume, type SectionKey } from "./schema";
+import type { EntryShape } from "./page/layout";
 
 const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 
@@ -86,19 +87,54 @@ async function docxToText(file: File): Promise<string> {
  * Draw an imported resume in the uploaded file's own design ("Your format"): its fonts, sizes,
  * margins, heading style and heading words, as measured by the server.
  */
-export function withDetectedStyle(r: Resume, style: Record<string, unknown> | undefined): Resume {
+export function withDetectedStyle(r: Resume, style: Record<string, unknown> | undefined, text = ""): Resume {
   if (!style || Object.keys(style).length < 4) return r;
-  const { titles, page, ...custom } = style as { titles?: Record<string, string>; page?: string };
+  const { titles, page, order, ...custom } = style as { titles?: Record<string, string>; page?: string; order?: string[] };
+  const entry = entryShape(text, r.experience.map((e) => [e.role, e.company]));
+  const edu = entryShape(text, r.education.map((e) => [e.degree, e.institution]));
   return normalizeResume({
     ...r,
     layout: {
       ...r.layout,
       template: "custom",
-      custom,
+      custom: { ...custom, ...(entry && { entry }), ...(edu && { edu }) },
+      order: fileOrder(order, r.layout.order),
       titles: titles ?? r.layout.titles,
       page: page === "Letter" ? "Letter" : "A4",
     },
   });
+}
+
+/** The sections in the file's order; sections the file doesn't have keep their usual place after them. */
+function fileOrder(order: string[] | undefined, current: SectionKey[]): SectionKey[] {
+  const known = (order ?? []).filter((k): k is SectionKey => (current as string[]).includes(k));
+  return [...new Set([...known, ...current])];
+}
+
+/**
+ * How the file wrote an entry's two names: "Job title, Company" on one line (and with what between them),
+ * or one per line, and which came first. Read from the file's text once the AI has found the names.
+ */
+export function entryShape(text: string, pairs: string[][]): EntryShape | undefined {
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+  const lines = text.split("\n").map(norm);
+  const all = lines.join("\n");
+  for (const [rawA, rawB] of pairs) {
+    const a = norm(rawA ?? "");
+    const b = norm(rawB ?? "");
+    if (a.length < 2 || b.length < 2 || a.includes(b) || b.includes(a)) continue;
+    for (const line of lines) {
+      const ia = line.indexOf(a);
+      const ib = line.indexOf(b);
+      if (ia < 0 || ib < 0) continue;
+      const join = ia < ib ? line.slice(ia + a.length, ib) : line.slice(ib + b.length, ia);
+      if (join.length <= 5) return { line: "one", first: ia < ib ? "a" : "b", join: join || " " };
+    }
+    const ia = all.indexOf(a);
+    const ib = all.indexOf(b);
+    if (ia >= 0 && ib >= 0) return { line: "two", first: ia < ib ? "a" : "b", join: "" };
+  }
+  return undefined;
 }
 
 /** If the text is our own JSON export (or the old app's), use it directly. */

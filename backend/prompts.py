@@ -44,6 +44,19 @@ PLAIN, HUMAN LANGUAGE (very important):
   add "and developers". Every number in the old line must appear in the new line, unchanged.
 """
 
+KEEP_MEANING = """
+KEEP THE MEANING (a recruiter will ask about every line):
+- Never change what a line is about. Keep its subject words: what was handled (sales, loans,
+  patients, medicines, students), the named methods, models and datasets, and the name of every
+  metric ("0.9416 Dice score" stays "0.9416 Dice score", never "0.9416 score").
+- Never swap a word for a job-post word that means something else: "sales" must not become
+  "shipments", "heparin and diltiazem drips" must not become "vasoactive drips".
+- Never pad a line to reach a length, and never tack job words onto the end of a sentence
+  ("... for the platform", "... of manual platform work"). If an honest rewrite comes out much
+  shorter, keep more of the original words instead.
+- If a line has nothing in common with the job, return it unchanged. Unchanged beats forced.
+"""
+
 
 # ---------------------------------------------------------------- tailoring an uploaded file
 
@@ -179,19 +192,24 @@ job's important hard skills and tools that fit the candidate's field (ATS keywor
 least relevant skills. The candidate reviews every added skill. Summary and bullets still follow
 every honesty rule: never mention a tool, data type or domain term there that the resume doesn't show.
 {PLAIN_LANGUAGE}
+{KEEP_MEANING}
 SAME SIZE, BETTER WORDS (strict):
 - Return EXACTLY the same number of bullets for every entry, in the same order: bullet 1 replaces
   bullet 1, and so on. Never add or drop a bullet.
-- Each new bullet must be about as long as the bullet it replaces: within 85%-110% of its "chars".
-- summary: same length as the original summary (within 85%-110%). If the original is empty, return "".
-  Align it with the job: open with the role the job is hiring for (if the resume supports it), then
-  the candidate's 2-3 strongest matches with this job from anywhere in the resume.
+- Each new bullet: 80%-110% of the "chars" of the bullet it replaces.
+- summary: 80%-110% of the original summary's length. If the original is empty, return "".
+  Align it with the job: keep the candidate's own title (from their summary or latest job, e.g.
+  "Data analyst"), never the job post's title unless they have held it. Then their 2-3 strongest
+  matches with this job from anywhere in the resume. No skill, tool, domain or kind of work the
+  resume doesn't show (for example "edge devices" when the resume never mentions them).
 - skills: the same number of lines (groups), each about as long as before.
   ATS KEYWORDS (required): find the hard skills and tools the job asks for that the resume does not
   list yet (e.g. "nnU-Net", "MONAI", "REST APIs", "CI/CD"). ADD 2-4 of them that fit the candidate's
   field to the matching skills lines, and REMOVE the same number of the least relevant skills so each
-  line keeps its length. Put the job's skills first in each line. You may rename a group's category to
-  fit the role (e.g. "ML Systems & Computer Vision" -> "Medical Imaging & Deep Learning"). Keep each
+  line keeps its length. Add tools, software and methods only: never licenses, certifications,
+  clinical procedures or years of experience. Put the job's skills first in each line.
+  You may rename a group's category to fit the role
+  (e.g. "ML Systems & Computer Vision" -> "Medical Imaging & Deep Learning"). Keep each
   group a clean comma-separated list of short names.
 - projects: keep each project's stack items (you may reorder them for the job).
 - ALIGN EVERY BULLET WITH THE JOB: for each bullet, find what in THAT job or project (its role,
@@ -246,7 +264,11 @@ def compact_resume(resume: dict) -> str:
 
 
 def tailor_prompt(resume: dict, job_description: str) -> str:
-    return f"CANDIDATE RESUME (JSON):\n{compact_resume(resume)}\n\nTARGET JOB DESCRIPTION:\n{job_description}"
+    groups = len(resume.get("skills", []))
+    return (
+        f"CANDIDATE RESUME (JSON):\n{compact_resume(resume)}\n\nTARGET JOB DESCRIPTION:\n{job_description}\n\n"
+        f"Return exactly {groups} skills lines, in the same order (never merge or split them)."
+    )
 
 
 REWRITE_MODES = {
@@ -287,11 +309,17 @@ You convert raw resume text (copied from a PDF or Word file) into structured JSO
 - Copy the person's words faithfully. Do not improve, summarise or invent anything.
 - Fix only obvious extraction problems (broken lines, stray bullets, hyphenation).
 - Put each professional work job in experience, academic/personal projects in projects, degrees in education.
+- Never drop words. A project's whole title line is its name, including a short description after a dash
+  ("pgshift — open source migration tool").
 - RESEARCH & PUBLICATIONS: Put Research, Publications, Open Source items into custom_sections
   (with title e.g. "Research & Open Source" or "Publications"). Do not convert them into standard projects.
 - Certifications, licenses, and achievements go in certifications.
+- skills: one group per labelled line, keeping its label ("Languages: Python, SQL" -> category "Languages").
+  Only when the skills section has no labels at all, return a single group with category "".
 - Any other section (Volunteer, Languages, Talks, Awards, Interests...) goes in custom_sections with its own heading
   as the title. Keep every line; never drop a section.
+- headline: only a short title line written in the header under the name (e.g. "Registered Nurse, BSN").
+  "" if there is none. Never copy a sentence from the summary into it.
 - Use "" or [] for anything missing. links = URLs or profile handles (LinkedIn, GitHub, site). Anything else on the
   contact line (license number, visa status, portfolio) also goes in links, exactly as written.
 - location of a job, project or school: only when the text writes a place for that entry. Never copy the person's

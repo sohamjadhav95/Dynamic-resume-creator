@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import sample from "../data/sample-resume.json";
 import { SAMPLE_JOB } from "../data/sample-job";
-import { heuristicParse, tryJson } from "./importing";
+import { entryShape, heuristicParse, tryJson } from "./importing";
 import { containsTerm, extractKeywords, guessJob, highlight, matchKeywords, matchScore } from "./keywords";
 import { normalizeResume, resumeText, setPath, splitList, uuid, visibleResume } from "./schema";
 import { _reducerForTests as reducer, initialState, activeResume } from "./store";
-import { acceptRewrite, applyAiResult, isSupported, newNames, offlineTailor, type AiTailorOutput } from "./tailor";
+import { acceptRewrite, applyAiResult, isSupported, jobOnlyWords, newNames, offlineTailor, type AiTailorOutput } from "./tailor";
 
 const legacy = JSON.parse(readFileSync(new URL("../../../examples/legacy_master_resume.json", import.meta.url), "utf8"));
 
@@ -114,7 +114,7 @@ describe("tailoring", () => {
     const ai: AiTailorOutput = {
       job: { title: "Backend Engineer", company: "Acme" },
       summary: "New summary.",
-      skills: [{ category: master.skills[0].category, items: ["Go", "Kafka", "Rust", "PostgreSQL"] }],
+      skills: master.skills.map((g, i) => (i === 0 ? { category: g.category, items: ["Go", "Kafka", "Rust", "PostgreSQL"] } : g)),
       experience: [{ id: master.experience[0].id, bullets: ["Rewritten bullet"] }, { id: "made-up", bullets: ["x"] }],
       projects: [{ id: master.projects[1].id, stack: ["Go", "Haskell"], bullets: ["Proj bullet"] }],
       project_order: [master.projects[1].id, master.projects[0].id],
@@ -224,5 +224,83 @@ describe("names check", () => {
     expect(resume.skills[0].category).toBe("Backend & Streaming");
     expect(resume.skills[0].items).toContain("gRPC");
     expect(insights.added).toContain("gRPC");
+  });
+});
+
+describe("tester findings", () => {
+  it("refuses a rewrite that drops what a number measures", () => {
+    const old = "Benchmarked U-Net against TotalSegmentator, achieving a 0.9416 Dice score and ~63x faster inference.";
+    const vague = "Benchmarked model architectures against baselines, achieving a 0.9416 score and ~63x faster inference.";
+    expect(acceptRewrite(old, vague, old)).toMatchObject({ ok: false, reason: 'dropped "Dice" next to a number' });
+    const fine = "Compared U-Net with TotalSegmentator: 0.9416 Dice score and ~63x faster inference on CAC scans.";
+    expect(acceptRewrite(old, fine, old + " CAC").ok).toBe(true);
+    expect(acceptRewrite("Built 25 Power BI dashboards for 300+ store managers.", "Built 25 BI dashboards for 300+ store managers.", "").ok).toBe(false);
+  });
+
+  it("does not count one shared word as having a skill", () => {
+    const text = "Skills: Telemetry monitoring, Patient education. Care for 4–5 patients per shift.";
+    expect(isSupported("Hemodynamic monitoring", text)).toBe(false);
+    expect(isSupported("Ventilator care", text)).toBe(false);
+    expect(isSupported("Patient education", text)).toBe(true);
+    expect(isSupported("Educating patients", text)).toBe(true);
+  });
+
+  it("adds at most four skills from the job post", () => {
+    const master = normalizeResume(sample);
+    const extra = ["Helm", "GKE", "Prometheus", "Grafana", "OpenTelemetry", "ArgoCD"];
+    const ai: AiTailorOutput = {
+      job: { title: "", company: "" },
+      summary: master.summary,
+      skills: master.skills.map((g, i) => ({ category: g.category, items: i === 0 ? [...extra, ...g.items] : g.items })),
+      experience: [],
+      projects: [],
+      project_order: [],
+      keywords: [],
+      project_ideas: [],
+      advice: [],
+    };
+    const { insights } = applyAiResult(master, ai, "groq", undefined, `We use ${extra.join(", ")}.`);
+    expect(insights.added?.length).toBeLessThanOrEqual(4);
+  });
+
+  it("refuses the job post's words for work the resume never describes", () => {
+    const jd = "Care for ventilated patients and those on vasoactive drips. Lead blameless postmortems.";
+    const old = "Care for 4–5 telemetry patients per shift, including drips such as heparin and diltiazem.";
+    const borrowed = "Care for 4–5 telemetry patients per shift, including vasoactive drips such as heparin and diltiazem.";
+    expect(jobOnlyWords(borrowed, old, jd)).toEqual(["vasoactive"]);
+    expect(acceptRewrite(old, borrowed, old, undefined, jd)).toMatchObject({ ok: false });
+    const fine = "Cared for 4–5 telemetry patients each shift, including drips such as heparin and diltiazem.";
+    expect(acceptRewrite(old, fine, old, undefined, jd).ok).toBe(true);
+    const summary = "AI Engineer building agentic workflows, LLM orchestration and multimodal systems, focused on low-latency inference.";
+    const padded = "AI Engineer building agentic workflows and multimodal systems for full product lifecycles across complex environments.";
+    expect(acceptRewrite(summary, padded, summary, undefined, "We build LLM apps.")).toMatchObject({ ok: false });
+  });
+
+  it("keeps the skills when the AI merges lines, and never lists a skill twice", () => {
+    const master = normalizeResume(sample);
+    const all = master.skills.flatMap((g) => g.items);
+    const merged: AiTailorOutput = {
+      job: { title: "", company: "" },
+      summary: master.summary,
+      skills: [{ category: "Everything", items: all }],
+      experience: [],
+      projects: [],
+      project_order: [],
+      keywords: [],
+      project_ideas: [],
+      advice: [],
+    };
+    expect(applyAiResult(master, merged, "groq").resume.skills).toEqual(master.skills);
+    const dup = { ...merged, skills: master.skills.map((g, i) => (i === 1 ? { ...g, items: [master.skills[0].items[0], ...g.items] } : g)) };
+    const items = applyAiResult(master, dup, "groq").resume.skills.flatMap((g) => g.items.map((x) => x.toLowerCase()));
+    expect(new Set(items).size).toBe(items.length);
+  });
+
+  it("reads how an entry's names sit in the uploaded file", () => {
+    const text = "Priya Nair\nPROFESSIONAL EXPERIENCE\nStaff Nurse, Step-Down Unit — Rush University Medical Center\t2021 – Present\n• Care for patients";
+    expect(entryShape(text, [["Staff Nurse, Step-Down Unit", "Rush University Medical Center"]])).toEqual({ line: "one", first: "a", join: " — " });
+    const two = "Google Summer of Code 2026 | ML4Sci May 2026 - Present\nResearch & Development | PREDICT1\n• Built things";
+    expect(entryShape(two, [["Research & Development | PREDICT1", "Google Summer of Code 2026 | ML4Sci"]])).toEqual({ line: "two", first: "b", join: "" });
+    expect(entryShape("nothing here", [["Analyst", "Acme"]])).toBeUndefined();
   });
 });

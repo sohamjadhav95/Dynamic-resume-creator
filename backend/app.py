@@ -80,7 +80,9 @@ async def unexpected_error(_: Request, exc: Exception):
 # ------------------------------------------------------------------ helpers
 
 
-def build_attempts(settings: Settings, user_gemini_key: str | None, quick: bool = False) -> list[Attempt]:
+def build_attempts(
+    settings: Settings, user_gemini_key: str | None, quick: bool = False, long_answer: bool = False
+) -> list[Attempt]:
     """The models to try, in the order of AI_CHAIN (providers without a key are skipped)."""
     gemini_budget = settings.ai_gemini_budget_seconds if not quick else 45
     groq_budget = settings.ai_groq_budget_seconds if not quick else 25
@@ -94,6 +96,10 @@ def build_attempts(settings: Settings, user_gemini_key: str | None, quick: bool 
             attempts.append(Attempt(GroqProvider(settings.groq_api_key, timeout=groq_budget), [model], groq_budget))
         elif provider == "gemini" and settings.gemini_api_key and model:
             attempts.append(Attempt(GeminiProvider(settings.gemini_api_key), [model], gemini_budget))
+    if long_answer:
+        # Groq's free tier lets qwen write only ~1000 tokens a minute: too little for a whole tailored
+        # resume, so it refuses at once. Ask it last for long answers.
+        attempts.sort(key=lambda a: a.provider.name == "groq" and a.models[0].startswith("qwen/"))
     return attempts
 
 
@@ -137,7 +143,7 @@ async def stream_chain(request: Request, kind: str, system: str, prompt: str, sc
         if limited:
             yield sse(Event("limit", limited))
             return
-        attempts = build_attempts(settings, own_key)
+        attempts = build_attempts(settings, own_key, long_answer=kind == "tailor")
         if not attempts:
             yield sse(Event("fallback", {"reasons": ["No AI service is configured."]}))
             return

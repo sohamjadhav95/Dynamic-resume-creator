@@ -25,7 +25,7 @@ export function ImportDialog({
 
   const structure = async (raw: string, style?: Record<string, unknown>) => {
     setError("");
-    const finish = (r: Resume) => onDone(withDetectedStyle(r, style));
+    const finish = (r: Resume) => onDone(withDetectedStyle(r, style, raw));
     const json = tryJson(raw);
     if (json) {
       finish(json);

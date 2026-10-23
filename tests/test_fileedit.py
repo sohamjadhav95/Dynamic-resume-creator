@@ -351,6 +351,54 @@ def test_style_detection_reads_any_resume_design():
     assert word["page"] in ("A4", "Letter") and word["family"] == "sans"
 
 
+def make_teal_docx() -> bytes:
+    """A Word resume unlike the owner's: teal name and headings, headline above the contact line."""
+    import docx
+    from docx.enum.text import WD_TAB_ALIGNMENT
+    from docx.shared import Pt, RGBColor
+
+    d = docx.Document()
+    teal = RGBColor(0x0E, 0x6E, 0x6E)
+
+    def para(text, size=10.5, bold=False, italic=False, color=None, before=0, after=2):
+        p = d.add_paragraph()
+        p.paragraph_format.space_before, p.paragraph_format.space_after = Pt(before), Pt(after)
+        r = p.add_run(text)
+        r.bold, r.italic, r.font.size = bold, italic, Pt(size)
+        if color:
+            r.font.color.rgb = color
+        return p
+
+    para("Priya Nair", 20, bold=True, color=teal)
+    para("Registered Nurse (RN), BSN", 11, italic=True)
+    para("priya@example.com  •  (312) 555-0199  •  Chicago, IL", 9.5)
+    for title, rows in (("PROFESSIONAL EXPERIENCE", ["Staff Nurse — Rush Medical Center", "Nurse — Masonic"]),):
+        para(title, 11.5, bold=True, color=teal, before=9, after=3)
+        for row in rows:
+            p = para("", before=4)
+            p.paragraph_format.tab_stops.add_tab_stop(Pt(480), WD_TAB_ALIGNMENT.RIGHT)
+            p.add_run(row).bold = True
+            p.add_run("\t2019 – 2021")
+            d.add_paragraph("Cared for 4–5 telemetry patients per shift on a step-down unit.", style="List Bullet")
+            d.add_paragraph("Precepted new graduate nurses on the unit.", style="List Bullet")
+    para("EDUCATION", 11.5, bold=True, color=teal, before=9, after=3)
+    para("Bachelor of Science in Nursing — Loyola University Chicago")
+    out = io.BytesIO()
+    d.save(out)
+    return out.getvalue()
+
+
+def test_style_detection_reads_word_colours_and_header_order():
+    from backend.fileedit.style import detect_style
+
+    s = detect_style("docx", make_teal_docx())
+    assert s["accent"] == "#0e6e6e" and s["nameInAccent"] is True
+    assert s["badgeFirst"] is True and s["badgeItalic"] is True
+    assert s["datesBold"] is False
+    assert s["gaps"]["bullet"] == 0  # Word's list style ignores spacing between its own bullets
+    assert s["titles"]["experience"] == "PROFESSIONAL EXPERIENCE"
+
+
 def test_style_detection_never_fails():
     from backend.fileedit.style import detect_style
 

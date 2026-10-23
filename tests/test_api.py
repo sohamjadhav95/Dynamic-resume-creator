@@ -173,3 +173,12 @@ def test_ai_chain_order_and_missing_keys(monkeypatch):
     ]  # no Gemini key -> Gemini entries are skipped
     own = app_module.build_attempts(get_settings(), "user-own-gemini-key-123456")
     assert [a.provider.name for a in own] == ["gemini"]  # an own key never uses our shared keys
+    long = app_module.build_attempts(get_settings(), None, long_answer=True)
+    assert [a.models[0] for a in long] == ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"]  # qwen can't write long answers
+
+
+def test_tailor_prompt_pins_the_number_of_skills_lines():
+    from backend import prompts
+
+    resume = {"skills": [{"category": "Languages", "items": ["Go"]}, {"category": "Cloud", "items": ["AWS"]}]}
+    assert "Return exactly 2 skills lines" in prompts.tailor_prompt(resume, "We need Go and AWS for our backend.")

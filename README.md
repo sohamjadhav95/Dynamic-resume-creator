@@ -30,13 +30,20 @@ headers/footers, which is what used to push resumes to two pages). Instead `web/
    kerning, so measured width = drawn width;
 2. **lays out** the resume itself: justified bullets with a hanging indent, bold "Category:" labels, dates on the
    right, a rule under each section title, and records which field every word belongs to;
-3. **keeps it on one page**: if content is too long it tightens spacing step by step, then text size (to 92% at most),
-   and only then flows onto a second page (the meter says by how many lines);
+3. **keeps it on one page**: if content is too long it tightens spacing step by step, then text size (to 92% at most).
+   If even that is not one page (or the uploaded file itself had two pages) it keeps the normal look and flows onto a
+   second page, never leaving a heading alone at the bottom (the meter says by how many lines);
 4. draws that one layout twice: as SVG on screen (click any word to edit its field) and as a real PDF with `pdf-lib`
    (selectable text in reading order, readable by applicant tracking systems).
 
 The default **Original** style reproduces the owner's PDF (measured from the file: A4, 15 mm sides, 17 pt name,
 7.6 pt contact line, 9 pt headings with a rule, 8.5 pt justified body). Classic, Modern and Compact are variations.
+
+**Your format** (any uploaded resume): `backend/fileedit/style.py` measures the uploaded PDF or Word file — serif or
+sans, page size, margins, name / heading / body sizes, heading colour and words, rule lines, bullet sign and indents,
+spacing, header order (headline above or below the contact line), contact separator, justified or ragged text,
+regular or bold dates, section order and page count. On import the app also reads whether each job is written as
+"Job title, Company" on one line or on two lines. The page engine then draws the resume with those settings.
 
 ## What it does
 
@@ -45,8 +52,10 @@ The default **Original** style reproduces the owner's PDF (measured from the fil
 - **Master profile + versions**: you keep one master profile with everything you've done. Each job gets its own
   tailored version; the master is never changed by tailoring.
 - **Honest by design**: the AI may rephrase and reorder, but never invent jobs, dates, numbers or projects. Numbers
-  are checked by code, not just requested in the prompt.
-  A **truth check** removes any skill the AI adds that your master profile doesn't mention.
+  are checked by code, not just requested in the prompt. Code also refuses a rewrite that drops what a number
+  measures ("0.9416 Dice score"), names a tool the job or project doesn't show, or borrows a job-post word the resume
+  never uses (a nurse's "heparin drips" must not become "vasoactive drips"). At most 4 skills come from the job post.
+  A **truth check** removes any skill the AI adds that is in neither your master profile nor the job post.
   The old "invent a project for this job" slot is now **Project ideas**: suggestions you could build, shown on the side.
 - **Instant match score** (runs in the browser, no AI needed): required vs nice-to-have keywords, found and missing,
   and the job post with highlights. Click a missing skill to add it, but only if you really have it.

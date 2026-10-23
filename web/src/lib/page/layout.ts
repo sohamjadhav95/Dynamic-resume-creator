@@ -87,6 +87,23 @@ export interface Style {
   bulletIndent: number;
   textIndent: number;
   bullet: string;
+  // Measured from an uploaded file ("Your format"); presets leave them out.
+  badgeFirst?: boolean; // headline line above the contact line
+  datesBold?: boolean;
+  entry?: EntryShape; // job title and company
+  edu?: EntryShape; // degree and school
+  justify?: boolean; // false = summary and bullets ragged-right, as in the file
+  contactSep?: string; // what separates contact details ("|", "·", "•")
+}
+
+/**
+ * How an entry's two names sit: on one line joined by `join` ("Job title, Company") or on two lines.
+ * first "a" = job title / degree first, "b" = company / school first.
+ */
+export interface EntryShape {
+  line: "one" | "two";
+  first: "a" | "b";
+  join: string;
 }
 
 /** What style detection (backend/fileedit/style.py) may set for "Your format". */
@@ -477,7 +494,7 @@ class Builder {
       if (!r) return;
       if (i > 0) this.gap(st.gaps.bullet);
       const start = this.blocks.length;
-      this.paragraph([r], { x: this.left + st.textIndent, align: "justify" });
+      this.paragraph([r], { x: this.left + st.textIndent, align: st.justify === false ? "left" : "justify" });
       const first = this.blocks[start];
       const t = first?.items.find((it): it is TextItem => it.kind === "text");
       if (first && t) {
@@ -501,6 +518,8 @@ class Builder {
 
 // ------------------------------------------------------------------ sections
 
+const sameWords = (a: string, b: string) => a.toLowerCase().replace(/[^a-z]/g, "") === b.toLowerCase().replace(/[^a-z]/g, "");
+
 function build(r: Resume, b: Builder) {
   const st = b.st;
   const v = visibleResume(r);
@@ -517,7 +536,16 @@ function build(r: Resume, b: Builder) {
   if (name && st.nameInAccent) name.color = b.accent;
   b.paragraph([name], { align });
   b.gap(st.gaps.name);
+  const badgeFont: FontKey = st.badgeBold ? (st.badgeItalic ? "boldItalic" : "bold") : st.badgeItalic ? "italic" : "regular";
+  const badge = v.basics.sub_badge
+    ? b.run(v.basics.sub_badge, badgeFont, st.badge, "basics.sub_badge", "text", "Highlights line")
+    : b.run(v.basics.headline, badgeFont, st.badge, "basics.headline", "text", "Headline", "Headline, e.g. Data Analyst");
+  if (st.badgeFirst && badge) {
+    b.paragraph([badge], { align });
+    b.gap(st.gaps.contact);
+  }
   const contactRuns: (Run | null)[] = [];
+  const sep = st.contactSep ?? "|";
   if (v.basics.contact_line) {
     contactRuns.push(b.run(v.basics.contact_line, "regular", st.contact, "basics.contact_line", "text", "Contact line"));
   } else {
@@ -529,13 +557,13 @@ function build(r: Resume, b: Builder) {
     for (const [text, path, kind, label] of parts) {
       const run = b.run(text, "regular", st.contact, path, kind, label);
       if (!run) continue;
-      if (contactRuns.length) contactRuns.push({ ...run, text: "|", path: undefined });
+      if (contactRuns.length) contactRuns.push({ ...run, text: sep, path: undefined });
       contactRuns.push(run);
     }
     if (v.basics.links.length) {
-      const run = b.run(v.basics.links.join("  |  "), "regular", st.contact, "basics.links", "list", "Links");
+      const run = b.run(v.basics.links.join(`  ${sep}  `), "regular", st.contact, "basics.links", "list", "Links");
       if (run) {
-        if (contactRuns.length) contactRuns.push({ ...run, text: "|", path: undefined });
+        if (contactRuns.length) contactRuns.push({ ...run, text: sep, path: undefined });
         contactRuns.push(run);
       }
     } else if (!contactRuns.length) {
@@ -549,28 +577,44 @@ function build(r: Resume, b: Builder) {
     while (total() > b.width && cr[0].size > st.contact * 0.8) for (const x of cr) x.size *= 0.97;
     b.paragraph(cr, { align });
   }
-  b.gap(st.gaps.contact);
-  const badgeFont: FontKey = st.badgeBold ? (st.badgeItalic ? "boldItalic" : "bold") : st.badgeItalic ? "italic" : "regular";
-  const badge = v.basics.sub_badge
-    ? b.run(v.basics.sub_badge, badgeFont, st.badge, "basics.sub_badge", "text", "Highlights line")
-    : b.run(v.basics.headline, badgeFont, st.badge, "basics.headline", "text", "Headline", "Headline, e.g. Data Analyst");
-  b.paragraph([badge], { align });
+  if (!st.badgeFirst || !badge) {
+    b.gap(st.gaps.contact);
+    b.paragraph([badge], { align });
+  }
   b.gap(st.gaps.header - st.gaps.section);
+  const dateFont: FontKey = st.datesBold === false ? "regular" : "bold";
+
+  /** An entry's two names (job title + company, degree + school), laid out the way the uploaded file had them. */
+  const entryLines = (shape: EntryShape, a: Run | null, c: Run | null, dates: Run | null, secondSize: number, secondFont: FontKey = "bold") => {
+    const [x, y] = shape.first === "a" ? [a, c] : [c, a];
+    if (shape.line === "two") {
+      b.row([x], dates);
+      if (y) b.paragraph([{ ...y, font: secondFont, size: b.size(secondSize) }], { keep: true });
+    } else if (x && y && !x.placeholder && !y.placeholder && /^\S/.test(shape.join)) {
+      b.row([{ ...x, text: x.text + shape.join.trim() }, y], dates); // "Job title, Company"
+    } else if (x && y && !x.placeholder && !y.placeholder && shape.join.trim()) {
+      b.row([x, { ...x, text: shape.join.trim(), path: undefined }, y], dates); // "Job title — Company"
+    } else b.row([x, y], dates);
+  };
 
   const sections: Record<SectionKey, () => void> = {
     summary: () => {
       const run = b.run(v.summary, "regular", st.body, "summary", "paragraph", "Summary", "A short summary of what you do best");
       if (!run) return;
       title("summary");
-      b.paragraph([run], { align: "justify" });
+      b.paragraph([run], { align: st.justify === false ? "left" : "justify" });
     },
     skills: () => {
       if (!v.skills.length) return;
       title("skills");
+      // One list under its own heading ("Clinical Skills: ..." under CLINICAL SKILLS) needs no label.
+      const plain = v.skills.length === 1 && (!v.skills[0].category.trim() || sameWords(v.skills[0].category, titles.skills));
       v.skills.forEach((g, n) => {
         const i = r.skills.findIndex((x) => x.id === g.id);
         if (n > 0) b.gap(st.gaps.bullet * 0.8);
-        const cat = b.run(g.category ? `${g.category}:` : "", "bold", st.skills, `skills.${i}.category`, "text", "Skill group", "Group:");
+        const cat = plain
+          ? null
+          : b.run(g.category ? `${g.category}:` : "", "bold", st.skills, `skills.${i}.category`, "text", "Skill group", "Group:");
         const items = b.run(g.items.join(", "), "regular", st.skills, `skills.${i}.items`, "list", "Skills", "Skill, skill, skill");
         b.paragraph([cat, items]);
       });
@@ -581,8 +625,12 @@ function build(r: Resume, b: Builder) {
       v.experience.forEach((e, n) => {
         const i = r.experience.findIndex((x) => x.id === e.id);
         if (n > 0) b.gap(st.gaps.entry);
-        const dates = b.run(e.dates, "bold", st.heading, `experience.${i}.dates`, "text", "Dates", "Dates");
-        if (st.longTitles) {
+        const dates = b.run(e.dates, dateFont, st.heading, `experience.${i}.dates`, "text", "Dates", "Dates");
+        if (st.entry) {
+          const role = b.run(e.role, "bold", st.heading, `experience.${i}.role`, "text", "Job title", "Job title");
+          const company = b.run(e.company, "bold", st.heading, `experience.${i}.company`, "text", "Company", "Company");
+          entryLines(st.entry, role, company, dates, st.role);
+        } else if (st.longTitles) {
           b.row([b.run(e.company, "bold", st.heading, `experience.${i}.company`, "text", "Company", "Company")], dates);
           b.paragraph([b.run(e.role, "bold", st.role, `experience.${i}.role`, "text", "Job title", "Job title")], { keep: true });
         } else {
@@ -604,7 +652,7 @@ function build(r: Resume, b: Builder) {
         if (n > 0) b.gap(st.gaps.entry);
         const name = b.run(p.name, "bold", st.heading, `projects.${i}.name`, "text", "Project name", "Project name");
         const link = p.link ? b.run(p.link, "regular", st.stack, `projects.${i}.link`, "text", "Link") : null;
-        b.row([name, link && name ? { ...link, text: "|", path: undefined } : null, link], b.run(p.dates, "bold", st.heading, `projects.${i}.dates`, "text", "Year", "Year"));
+        b.row([name, link && name ? { ...link, text: "|", path: undefined } : null, link], b.run(p.dates, dateFont, st.heading, `projects.${i}.dates`, "text", "Year", "Year"));
         const stack = b.run(p.stack.join(", "), "italic", st.stack, `projects.${i}.stack`, "list", "Tech stack", "Tools used");
         if (stack) b.paragraph([stack], { keep: true });
         b.gap(1);
@@ -620,12 +668,15 @@ function build(r: Resume, b: Builder) {
           const ii = r.custom_sections[si].items.findIndex((x) => x.id === it.id);
           const base = `custom_sections.${si}.items.${ii}`;
           if (n > 0) b.gap(st.gaps.entry);
-          const title = b.run(it.title, "bold", st.heading, `${base}.title`, "text", "Title", "Title");
+          // A line with nothing else ("English (native), Spanish (fluent)") is plain text, not a title.
+          const plain = !it.subtitle && !it.dates && !it.bullets.some((x) => x.trim());
+          const title = plain
+            ? b.run(it.title, "regular", st.body, `${base}.title`, "text", "Text", "Text")
+            : b.run(it.title, "bold", st.heading, `${base}.title`, "text", "Title", "Title");
           const sub = it.subtitle ? b.run(it.subtitle, "bold", st.heading, `${base}.subtitle`, "text", "Detail") : null;
-          b.row(
-            [title, title && sub ? { ...title, text: "|", path: undefined } : null, sub],
-            b.run(it.dates, "bold", st.heading, `${base}.dates`, "text", "Date"),
-          );
+          const dates = b.run(it.dates, dateFont, st.heading, `${base}.dates`, "text", "Date");
+          if (st.entry?.line === "one") entryLines({ ...st.entry, first: "a" }, title, sub, dates, st.heading);
+          else b.row([title, title && sub ? { ...title, text: "|", path: undefined } : null, sub], dates);
           b.gap(1);
           b.bullets(it.bullets, `${base}.bullets`);
         });
@@ -642,11 +693,15 @@ function build(r: Resume, b: Builder) {
       v.education.forEach((e, n) => {
         const i = r.education.findIndex((x) => x.id === e.id);
         if (n > 0) b.gap(st.gaps.entry);
-        b.row(
-          [b.run(e.degree, "bold", st.heading, `education.${i}.degree`, "text", "Degree", "Degree")],
-          b.run(e.dates, "bold", st.heading, `education.${i}.dates`, "text", "Dates", "Dates"),
-        );
-        b.paragraph([b.run(e.institution, "regular", st.body, `education.${i}.institution`, "text", "School", "School")]);
+        const degree = b.run(e.degree, "bold", st.heading, `education.${i}.degree`, "text", "Degree", "Degree");
+        const dates = b.run(e.dates, dateFont, st.heading, `education.${i}.dates`, "text", "Dates", "Dates");
+        if (st.edu) {
+          const school = b.run(e.institution, "bold", st.heading, `education.${i}.institution`, "text", "School", "School");
+          entryLines(st.edu, degree, school, dates, st.body, "regular");
+        } else {
+          b.row([degree], dates);
+          b.paragraph([b.run(e.institution, "regular", st.body, `education.${i}.institution`, "text", "School", "School")]);
+        }
         if (e.details) b.paragraph([b.run(e.details, "regular", st.body, `education.${i}.details`, "text", "Details")]);
       });
     },
@@ -700,6 +755,18 @@ export function styleFor(r: Resume): Style {
       contact: num(c.gaps?.contact, base.gaps.contact, 0, 14),
     },
   };
+  const shape = (v: unknown): EntryShape | undefined => {
+    const s = v as Partial<EntryShape> | undefined;
+    if (!s || (s.line !== "one" && s.line !== "two")) return undefined;
+    return { line: s.line, first: s.first === "b" ? "b" : "a", join: typeof s.join === "string" ? s.join.slice(0, 6) : ", " };
+  };
+  out.nameInAccent = c.nameInAccent === true;
+  out.badgeFirst = c.badgeFirst === true;
+  out.datesBold = c.datesBold !== false;
+  out.entry = shape(c.entry);
+  out.justify = c.justify !== false;
+  out.contactSep = typeof c.contactSep === "string" && /^[|·•–,-]$/.test(c.contactSep) ? c.contactSep : undefined;
+  out.edu = shape(c.edu);
   out.heading = num(c.heading, out.body + 0.5, 7, 15);
   out.role = num(c.role, out.heading, 7, 15);
   out.stack = num(c.stack, out.body * 0.94, 6.5, 13);
@@ -718,8 +785,10 @@ function paginate(b: Builder): { pages: Item[][]; fields: Record<string, Field>;
   let page = 0;
   let offset = 0;
   b.blocks.forEach((block, i) => {
-    const next = b.blocks[i + 1];
-    const needsRoom = block.keepWithNext && next ? next.bottom : block.bottom;
+    // A heading keeps with the entry title, which keeps with its first line: follow the whole chain.
+    let j = i;
+    while (b.blocks[j].keepWithNext && b.blocks[j + 1] && j - i < 6) j++;
+    const needsRoom = b.blocks[j].bottom;
     if (needsRoom - offset > bottomLimit + 0.5 && block.top - offset > st.margin.top + 1) {
       page += 1;
       pages.push([]);
@@ -781,8 +850,11 @@ function toLayout(r: Resume, s: number, f: number, placeholders: boolean, tighte
  */
 export function layoutResume(r: Resume): { print: PageLayout; screen: PageLayout } {
   const tries = steps(r.layout.density);
-  let chosen = tries[tries.length - 1];
-  for (const t of tries) {
+  // Squeeze spacing and text only when that makes it one page. A resume that needs two pages anyway
+  // (like a long uploaded one) keeps its normal look over two pages.
+  let chosen = tries[0];
+  const twoPageFile = r.layout.template === "custom" && Number(r.layout.custom?.pages) >= 2;
+  for (const t of twoPageFile ? [] : tries) {
     const res = layoutOnce(r, t.s, t.f, false);
     if (res.pages.length === 1) {
       chosen = t;

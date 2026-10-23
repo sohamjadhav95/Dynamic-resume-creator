@@ -132,7 +132,8 @@ async def run_chain(
                 return
             reason = outcome.get("reason", "unknown error")
             reasons.append(reason)
-            if outcome.get("status") in (429, 503) or "no response" in reason:
+            # "Request too large" is about this request's size: the model is fine for smaller ones.
+            if (outcome.get("status") in (429, 503) or "no response" in reason) and "too large" not in reason.lower():
                 note_busy(provider.name, model)
             log.warning("ai.attempt_failed provider=%s model=%s reason=%s", provider.name, model, reason)
             if not outcome.get("retry_same_provider"):
