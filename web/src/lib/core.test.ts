@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import sample from "../data/sample-resume.json";
 import { SAMPLE_JOB } from "../data/sample-job";
-import { entryShape, heuristicParse, tryJson } from "./importing";
+import { heuristicParse, tryJson } from "./importing";
 import { containsTerm, extractKeywords, guessJob, highlight, matchKeywords, matchScore } from "./keywords";
 import { normalizeResume, resumeText, setPath, splitList, uuid, visibleResume } from "./schema";
 import { _reducerForTests as reducer, initialState, activeResume } from "./store";
@@ -296,11 +296,4 @@ describe("tester findings", () => {
     expect(new Set(items).size).toBe(items.length);
   });
 
-  it("reads how an entry's names sit in the uploaded file", () => {
-    const text = "Priya Nair\nPROFESSIONAL EXPERIENCE\nStaff Nurse, Step-Down Unit — Rush University Medical Center\t2021 – Present\n• Care for patients";
-    expect(entryShape(text, [["Staff Nurse, Step-Down Unit", "Rush University Medical Center"]])).toEqual({ line: "one", first: "a", join: " — " });
-    const two = "Google Summer of Code 2026 | ML4Sci May 2026 - Present\nResearch & Development | PREDICT1\n• Built things";
-    expect(entryShape(two, [["Research & Development | PREDICT1", "Google Summer of Code 2026 | ML4Sci"]])).toEqual({ line: "two", first: "b", join: "" });
-    expect(entryShape("nothing here", [["Analyst", "Acme"]])).toBeUndefined();
-  });
 });

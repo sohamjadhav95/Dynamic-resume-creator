@@ -1,5 +1,7 @@
 // The resume data model. Everything in the app reads and writes this shape.
 
+import type { Source } from "./source";
+
 export type SectionKey =
   | "summary"
   | "skills"
@@ -29,7 +31,7 @@ const DEFAULT_ORDER: SectionKey[] = [
   "education",
 ];
 
-export type TemplateId = "original" | "classic" | "modern" | "compact" | "custom";
+export type TemplateId = "original" | "classic" | "modern" | "compact";
 export type PageSize = "A4" | "Letter";
 
 export interface Basics {
@@ -91,7 +93,7 @@ export interface Layout {
   density: number; // -3 (roomy) … 0 … +4 (tight)
   accent: string;
   titles?: Partial<Record<SectionKey, string>>; // the resume's own section headings
-  custom?: Record<string, unknown>; // "Your format": the uploaded file's measured design (see page/layout.ts)
+  source?: Source; // an uploaded PDF shown and edited as itself (see source.ts)
 }
 
 export interface Resume {
@@ -278,7 +280,7 @@ export function normalizeResume(input: unknown): Resume {
   base.layout = {
     order,
     hidden: strList(l.hidden),
-    template: ["original", "classic", "modern", "compact", "custom"].includes(l.template) ? l.template : "original",
+    template: ["original", "classic", "modern", "compact"].includes(l.template) ? l.template : "original",
     page: l.page === "Letter" ? "Letter" : "A4",
     density: Number.isFinite(l.density) ? Math.max(-3, Math.min(4, l.density)) : 0,
     accent: typeof l.accent === "string" && /^#[0-9a-f]{6}$/i.test(l.accent) ? l.accent : "#1B1A17",
@@ -288,9 +290,32 @@ export function normalizeResume(input: unknown): Resume {
     for (const key of DEFAULT_ORDER) if (typeof l.titles[key] === "string" && l.titles[key].trim()) titles[key] = str(l.titles[key]).slice(0, 60);
     if (Object.keys(titles).length) base.layout.titles = titles;
   }
-  if (l.custom && typeof l.custom === "object" && !Array.isArray(l.custom)) base.layout.custom = l.custom;
-  if (base.layout.template === "custom" && !base.layout.custom) base.layout.template = "original";
+  const source = normalizeSource(l.source);
+  if (source) base.layout.source = source;
   return base;
+}
+
+function normalizeSource(raw: any): Source | undefined {
+  if (!raw || typeof raw !== "object" || typeof raw.file !== "string" || !/^[0-9a-f]{16,64}$/.test(raw.file)) return undefined;
+  const blocks = (Array.isArray(raw.blocks) ? raw.blocks : [])
+    .filter((b: any) => b && typeof b.id === "string" && typeof b.text === "string" && Array.isArray(b.lines))
+    .map((b: any) => ({
+      id: b.id.slice(0, 40),
+      page: Number(b.page) || 0,
+      kind: b.kind,
+      section: str(b.section),
+      text: b.text,
+      prefix: str(b.prefix),
+      lines: b.lines.filter((r: any) => Array.isArray(r) && r.length === 4).map((r: number[]) => r.map(Number)),
+      ...(typeof b.path === "string" && b.path ? { path: b.path } : {}),
+      ...(typeof b.sep === "string" ? { sep: b.sep } : {}),
+    }));
+  const edits: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw.edits ?? {})) if (typeof v === "string") edits[k] = v;
+  const pages = (Array.isArray(raw.pages) ? raw.pages : []).map((p: any) => ({ width: Number(p.width) || 595, height: Number(p.height) || 842 }));
+  const paper = raw.paper === "A4" || raw.paper === "Letter" ? { paper: raw.paper as "A4" | "Letter" } : {};
+  const fit = raw.fit === "pages" ? { fit: "pages" as const } : {};
+  return blocks.length && pages.length ? { file: raw.file, name: str(raw.name), pages, blocks, edits, ...paper, ...fit } : undefined;
 }
 
 function customItem(i: any): CustomItem {

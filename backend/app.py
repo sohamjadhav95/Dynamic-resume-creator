@@ -2,7 +2,6 @@ import base64
 import binascii
 import json
 import logging
-import time
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, Request
@@ -16,14 +15,9 @@ from .ai.providers import GeminiProvider, GroqProvider
 from .ai.router import Attempt, Event, collect, run_chain
 from .auth import Identity, get_identity
 from .config import Settings, get_settings
-from .fileedit.screen import screen_edits
-from .fileedit.style import detect_style
 from .limits import consume
 from .schemas import (
-    FileFixOutput,
     FileRenderRequest,
-    FileTailorOutput,
-    FileTailorRequest,
     FileUploadRequest,
     ParsedResume,
     ParseRequest,
@@ -195,7 +189,7 @@ async def tailor(req: TailorRequest, request: Request):
         request,
         "tailor",
         prompts.tailor_system(req.options),
-        prompts.tailor_prompt(req.resume, req.job_description),
+        prompts.tailor_prompt(req.resume, req.job_description, req.limits),
         TailorOutput,
         temperature=0.3,
     )
@@ -235,7 +229,7 @@ async def rewrite(req: RewriteRequest, request: Request):
     return {"options": options, "engine": final.data["engine"]}
 
 
-# ------------------------------------------------------------------ uploaded files (keep the original design)
+# ------------------------------------------------------------------ uploaded PDFs (edited in place)
 
 
 class FileProblem(Exception):
@@ -250,170 +244,42 @@ async def file_problem(_: Request, exc: FileProblem):
     return JSONResponse({"error": exc.message}, status_code=exc.status)
 
 
-def decode_file(b64: str) -> bytes:
+def decode_pdf(b64: str) -> bytes:
     try:
         data = base64.b64decode(b64, validate=False)
     except (binascii.Error, ValueError) as exc:
         raise FileProblem("That file could not be read. Please upload it again.") from exc
     if len(data) > fileedit.MAX_FILE_BYTES:
-        raise FileProblem("That file is over 3 MB. Please upload a smaller PDF or Word file.")
+        raise FileProblem("That file is over 3 MB. Please upload a smaller PDF.")
+    if not fileedit.is_pdf(data):
+        raise FileProblem("Please upload a PDF file.")
     return data
-
-
-async def read_file(file_type: str, data: bytes) -> fileedit.Extracted:
-    try:
-        return await run_in_threadpool(fileedit.extract, file_type, data)
-    except Exception as exc:
-        log.warning("file.extract_failed type=%s error=%r", file_type, exc)
-        raise FileProblem("We couldn't read this file. If it is a scanned image, paste the text instead.") from exc
 
 
 @app.post("/api/file/extract")
 async def file_extract(req: FileUploadRequest):
-    """Checks an uploaded resume and returns its text. The browser keeps the file itself."""
-    data = decode_file(req.file_base64)
-    file_type = fileedit.file_type_of(req.filename, data)
-    if not file_type:
-        raise FileProblem("Please upload a PDF (.pdf) or Word (.docx) file.")
-    extracted = await read_file(file_type, data)
-    if len(extracted.text.strip()) < 40:
+    """The PDF's text (for the AI) and its text blocks with positions (for editing on the page)."""
+    data = decode_pdf(req.file_base64)
+    try:
+        info = await run_in_threadpool(fileedit.extract, data)
+    except Exception as exc:
+        log.warning("file.extract_failed error=%r", exc)
+        raise FileProblem("We couldn't read this file. If it is a scanned image, paste the text instead.") from exc
+    if len(info["text"].strip()) < 40:
         raise FileProblem("This file has almost no readable text (it may be a scanned image). Paste the text instead.")
-    return {
-        "file_type": file_type,
-        "pages": extracted.pages,
-        "text": extracted.text,
-        "editable": len(extracted.segments),
-        "font": extracted.font,
-        "style": await run_in_threadpool(detect_style, file_type, data),
-    }
+    return info
 
 
 @app.post("/api/file/render")
 async def file_render(req: FileRenderRequest):
-    """Writes a list of text changes into the original file. No AI involved."""
-    data = decode_file(req.file_base64)
-    edits = {e.id: e.text for e in req.edits if e.text.strip()}
+    """Writes text changes into the original PDF. No AI involved."""
+    data = decode_pdf(req.file_base64)
     try:
-        out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, edits)
+        out, results = await run_in_threadpool(fileedit.apply, data, {e.id: e.text for e in req.edits})
+        sheets = None
+        if req.paper:
+            out, sheets = await run_in_threadpool(fileedit.fit_to_paper, out, req.paper, req.fit)
     except Exception as exc:
         log.exception("file.render_failed: %r", exc)
         raise FileProblem("We couldn't update this file. Please try again.", 500) from exc
-    return {"file_base64": base64.b64encode(out).decode("ascii"), "results": [r.to_dict() for r in results]}
-
-
-@app.post("/api/file/tailor")
-async def file_tailor(req: FileTailorRequest, request: Request):
-    """AI rewrites lines of the uploaded file in place; streams progress, then the finished file."""
-    settings = get_settings()
-    identity = await get_identity(request)
-    own_key = user_key(request)
-    data = decode_file(req.file_base64)
-    extracted = await read_file(req.file_type, data)
-    if not extracted.segments:
-        raise FileProblem("We couldn't find bullet points or a summary to rewrite in this file.")
-    info = extracted.to_dict()
-    segments = {s["id"]: s for s in info["segments"]}
-    order = {item["id"]: i for i, item in enumerate(info["outline"])}
-
-    async def events() -> AsyncIterator[str]:
-        yield ": connected\n\n"
-        limited = await quota_or_none(identity, "tailor", own_key)
-        if limited:
-            yield sse(Event("limit", limited))
-            return
-        attempts = build_attempts(settings, own_key)
-        if not attempts:
-            yield sse(Event("fallback", {"reasons": ["No AI service is configured."]}))
-            return
-        started = time.monotonic()
-        final: Event | None = None
-        async for event in run_chain(
-            attempts,
-            prompts.file_tailor_system(req.options),
-            prompts.file_tailor_prompt(info, req.job_description),
-            FileTailorOutput,
-            temperature=0.3,
-            stall_seconds=settings.ai_stall_seconds,
-            total_deadline_seconds=settings.ai_total_deadline_seconds - 30,
-            heartbeat_seconds=settings.heartbeat_seconds,
-        ):
-            if event.type == "result":
-                final = event
-            else:
-                yield sse(event)
-        if final is None:
-            return  # the fallback event was already sent
-
-        ai = final.data["data"]
-        yield sse(Event("checking", {}))
-        edits = {e["id"]: e["text"] for e in ai["edits"] if e["id"] in segments}
-
-        async def write(edits: dict[str, str]) -> tuple[bytes, list[fileedit.EditResult]]:
-            allowed, refused = screen_edits(info, edits)  # no borrowed tools, no skills you don't have
-            out, results = await run_in_threadpool(fileedit.apply, req.file_type, data, allowed)
-            return out, results + refused
-
-        out, results = await write(edits)
-
-        # One more short AI round for lines whose rewrite was too long or too short.
-        failed = [r for r in results if r.status in ("too_long", "too_short", "changed_facts")]
-        remaining = settings.ai_total_deadline_seconds - (time.monotonic() - started)
-        if failed and remaining > 45:
-            items = []
-            for r in failed:
-                seg = segments[r.id]
-                _aim, lo, hi = prompts.char_range(seg["text"], seg["min_chars"], seg["max_chars"])
-                items.append({"id": r.id, "old": r.old, "tried": r.new, "lo": lo, "hi": hi, "problem": r.note})
-            fixed: Event | None = None
-            async for event in run_chain(
-                build_attempts(settings, own_key, quick=True),
-                prompts.FILE_FIX_SYSTEM,
-                prompts.file_fix_prompt(items),
-                FileFixOutput,
-                temperature=0.4,
-                stall_seconds=40,
-                total_deadline_seconds=min(90, remaining - 15),
-                heartbeat_seconds=settings.heartbeat_seconds,
-                prefer_model=final.data["model"],
-            ):
-                if event.type == "result":
-                    fixed = event
-                elif event.type == "heartbeat":
-                    yield sse(event)
-            log.info("file.tailor_retry asked=%d answered=%s", len(items), fixed is not None)
-            if fixed is not None:
-                retry = {e["id"]: e["text"] for e in fixed.data["data"]["edits"] if e["id"] in edits}
-                if retry:
-                    edits.update(retry)
-                    out, results = await write(edits)
-
-        applied = [{"id": r.id, "text": r.new} for r in results if r.status == "applied"]
-        log.info(
-            "file.tailor type=%s segments=%d applied=%d refused=%d",
-            req.file_type,
-            len(segments),
-            len(applied),
-            sum(r.status in ("too_long", "too_short", "changed_facts") for r in results),
-        )
-        payload = {
-            "job": ai["job"],
-            "keywords": ai["keywords"],
-            "project_ideas": ai["project_ideas"],
-            "advice": ai["advice"],
-            "edits": applied,
-            "results": [r.to_dict() for r in sorted(results, key=lambda r: order.get(r.id, 9999))],
-            "file_base64": base64.b64encode(out).decode("ascii"),
-        }
-        yield sse(
-            Event(
-                "result",
-                {
-                    "engine": final.data["engine"],
-                    "model": final.data["model"],
-                    "seconds": round(time.monotonic() - started, 1),
-                    "data": payload,
-                },
-            )
-        )
-
-    return stream_response(events())
+    return {"file_base64": base64.b64encode(out).decode("ascii"), "results": results, "sheets": sheets}

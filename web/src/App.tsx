@@ -2,7 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Canvas } from "./components/Canvas";
 import { AuthDialog, SettingsDialog, VersionsDialog } from "./components/Dialogs";
-import { Icon } from "./components/Icon";
+import { BrandMark, Icon } from "./components/Icon";
 import { ImportDialog } from "./components/ImportDialog";
 import { LeftPanel } from "./components/LeftPanel";
 import { RightPanel, type TailorProgress } from "./components/RightPanel";
@@ -29,6 +29,7 @@ import {
   type Version,
   type Workspace,
 } from "./lib/storage";
+import { fitToPdf, lineLimits, putFile, syncFiles } from "./lib/source";
 import { MASTER, useStore } from "./lib/store";
 import { signOut, watchSession } from "./lib/supabase";
 import { applyAiResult, offlineTailor, retryRefused, type Insights } from "./lib/tailor";
@@ -62,6 +63,7 @@ export function App() {
   const [accountsEnabled, setAccountsEnabled] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "guest" });
+  const userId = mode.kind === "guest" ? null : mode.userId;
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [started, setStarted] = useState(false);
@@ -74,6 +76,8 @@ export function App() {
   const abortRef = useRef<AbortController | null>(null);
   const quickRef = useRef(false);
   const userIdRef = useRef<string | null>(null);
+  const bootedRef = useRef(false);
+  const [booted, setBooted] = useState(false); // false until we know who is signed in
 
   // ---------------------------------------------------------------- boot
   useEffect(() => applyTheme(theme), [theme]);
@@ -85,42 +89,54 @@ export function App() {
   // ---------------------------------------------------------------- accounts
   useEffect(() => {
     let unsub = () => {};
+    const empty = (): Workspace => ({ master: emptyResume(), versions: [] });
     watchSession(async (s) => {
       setSession(s);
       const uid = s?.user.id ?? null;
-      if (uid === userIdRef.current) return;
+      if (bootedRef.current && uid === userIdRef.current) return;
       const wasSignedIn = userIdRef.current !== null;
       userIdRef.current = uid;
 
       if (!uid) {
-        if (wasSignedIn) {
-          lastSaved.current = null;
-          setMode({ kind: "guest" });
-          dispatch({ type: "load", ws: loadLocal() ?? { master: emptyResume(), versions: [] } });
-        }
+        // Guests get this browser's workspace; after signing out, a clean start (nobody else's resume).
+        lastSaved.current = null;
+        setMode({ kind: "guest" });
+        dispatch({ type: "load", ws: wasSignedIn ? empty() : (loadLocal() ?? empty()) });
+        if (wasSignedIn) setStarted(false);
+        bootedRef.current = true;
+        setBooted(true);
         return;
       }
       try {
         const cloud = await loadCloud(uid);
-        if (cloud) {
-          lastSaved.current = cloud;
-          setMode({ kind: "cloud", userId: uid });
-          dispatch({ type: "load", ws: cloud });
-        } else {
-          // First sign-in: move this browser's resume into the account.
-          const local = loadLocal() ?? { master: emptyResume(), versions: [] };
-          lastSaved.current = null;
-          setMode({ kind: "cloud", userId: uid });
-          dispatch({ type: "load", ws: local });
-          if (!isEmptyResume(local.master)) toast({ message: "Your resume is now saved to your account." });
+        if (uid !== userIdRef.current) return; // signed in as someone else meanwhile
+        lastSaved.current = cloud;
+        setMode({ kind: "cloud", userId: uid });
+        dispatch({ type: "load", ws: cloud ?? empty() });
+        // A new account starts empty. A resume made in this browser as a guest moves in only if asked.
+        const guest = loadLocal();
+        if (!cloud && guest && !isEmptyResume(guest.master)) {
+          toast({
+            message: "You made a resume in this browser before signing in.",
+            action: {
+              label: "Add it to my account",
+              run: () => {
+                dispatch({ type: "load", ws: guest });
+                clearLocal();
+                setStarted(true);
+              },
+            },
+          });
         }
       } catch {
         const cached = loadLocal(userCacheKey(uid));
         setMode({ kind: "cloud-offline", userId: uid });
-        if (cached) dispatch({ type: "load", ws: cached });
+        dispatch({ type: "load", ws: cached ?? empty() });
         setSaveState("offline");
         toast({ message: "Couldn't reach your account. You can keep working; changes are saved in this browser.", kind: "error" });
       }
+      bootedRef.current = true;
+      setBooted(true);
     }).then((u) => (unsub = u));
     return () => unsub();
   }, [dispatch, toast]);
@@ -143,6 +159,7 @@ export function App() {
       try {
         const prev = lastSaved.current;
         if (!prev || prev.master !== ws.master) await saveCloudMaster(mode.userId, ws.master);
+        await syncFiles([ws.master, ...ws.versions.map((v) => v.data)], mode.userId);
         const prevById = new Map(prev?.versions.map((v) => [v.id, v]) ?? []);
         for (const v of ws.versions) if (prevById.get(v.id) !== v) await saveCloudVersion(mode.userId, v);
         for (const v of prev?.versions ?? []) if (!ws.versions.some((x) => x.id === v.id)) await deleteCloudVersion(v.id);
@@ -203,9 +220,10 @@ export function App() {
 
     let outcome: { resume: Resume; insights: Insights };
     let note = "";
-    const quick = () => offlineTailor(master, jd, opts);
+    const quick = () => offlineTailor(master, jd);
     try {
-      const final = await streamAi("/api/tailor", { resume: aiPayload(master), job_description: jd, options: opts }, onEvent, ctrl.signal);
+      const limits = master.layout.source ? { limits: lineLimits(master) } : {};
+      const final = await streamAi("/api/tailor", { resume: aiPayload(master), job_description: jd, options: opts, ...limits }, onEvent, ctrl.signal);
       if (final.type === "result") {
         setProgress((p) => p && { ...p, stage: "finishing" });
         outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model, jd);
@@ -232,13 +250,28 @@ export function App() {
     }
 
     try {
+      if (master.layout.source) outcome = await fitPdfWithRetry(outcome, master, jd);
       saveVersion(outcome, jd, note);
     } catch {
       toast({ message: "Something went wrong while saving this version. Please try again.", kind: "error" });
     } finally {
       setProgress(null);
     }
-  }, [state.jobDraft, state.ws.master, state.options, version, progress, layout, toast, edit, dispatch]);
+  }, [state.jobDraft, state.ws.master, state.options, version, progress, layout, toast, edit, dispatch, userId]);
+
+  /** Uploaded PDF: rewrites must fit their old lines. Misfits get one more AI try, told how much to cut. */
+  const fitPdfWithRetry = async (first: { resume: Resume; insights: Insights }, master: Resume, jd: string) => {
+    const before = first.insights.kept?.length ?? 0;
+    let outcome = await fitToPdf(first, master, userId);
+    const misfits = (outcome.insights.kept ?? []).slice(before);
+    if (!misfits.length || outcome.insights.engine === "offline") return outcome;
+    const retried = await retryRefused({ ...outcome, insights: { ...outcome.insights, kept: misfits } }, master, jd, rewriteBullet);
+    outcome = {
+      resume: retried.resume,
+      insights: { ...retried.insights, kept: [...(outcome.insights.kept ?? []).slice(0, before), ...(retried.insights.kept ?? [])] },
+    };
+    return fitToPdf(outcome, master, userId);
+  };
 
   const saveVersion = (outcome: { resume: Resume; insights: Insights }, jd: string, note: string) => {
     const match = computeMatch(outcome.resume, jd, outcome.insights.keywords);
@@ -401,23 +434,43 @@ export function App() {
         <ImportDialog
           initialTab={dialog === "import-paste" ? "paste" : "upload"}
           onClose={() => setDialog(null)}
-          onDone={(r) => {
+          onDone={async (r, pdf) => {
             if (!isEmptyResume(state.ws.master) && !confirm("Replace your current master profile with the imported resume?")) return;
+            if (pdf && r.layout.source) await putFile(r.layout.source.file, pdf.b64, pdf.name, userId);
             dispatch({ type: "setActive", id: MASTER });
-            loadMaster(r, "Imported. Check each section, then paste a job to tailor it.");
+            loadMaster(
+              r,
+              r.layout.source
+                ? "Your PDF is ready. Click any text on it to change it, or paste a job to tailor it."
+                : "Imported. Check each section, then paste a job to tailor it.",
+            );
           }}
         />
       )}
     </>
   );
 
+  const onSignOut = async () => {
+    if (mode.kind !== "guest") clearLocal(userCacheKey(mode.userId));
+    await signOut();
+  };
+
   // ---------------------------------------------------------------- render
+  if (!booted) {
+    return (
+      <div className="boot" role="status" aria-live="polite">
+        <BrandMark /> Opening your workspace…
+      </div>
+    );
+  }
   const showWelcome = !started && isEmptyResume(state.ws.master) && state.ws.versions.length === 0 && !progress;
   if (showWelcome) {
     return (
       <>
         <Welcome
           canSignIn={accountsEnabled}
+          email={session?.user.email ?? null}
+          onSignOut={onSignOut}
           onSignIn={() => setDialog("auth")}
           onUpload={() => setDialog("import-upload")}
           onPaste={() => setDialog("import-paste")}
@@ -447,10 +500,7 @@ export function App() {
         theme={theme}
         onTheme={onTheme}
         onSignIn={() => setDialog("auth")}
-        onSignOut={async () => {
-          if (mode.kind !== "guest") clearLocal(userCacheKey(mode.userId));
-          await signOut();
-        }}
+        onSignOut={onSignOut}
         onVersions={() => setDialog("versions")}
         onSettings={() => setDialog("settings")}
         onImport={() => setDialog("import-upload")}
@@ -515,7 +565,7 @@ export function App() {
           {layout !== "wide" && <div className="insights">{insightsPanel}</div>}
         </aside>
         )}
-        <Canvas title={title} />
+        <Canvas title={title} userId={userId} />
         {layout === "wide" &&
           (cols.rightClosed ? (
             <aside className="side right rail" aria-label="Match and AI tools (collapsed)">

@@ -1,49 +1,40 @@
 // Getting an existing resume into the app: file -> text -> structured resume.
-// Text extraction runs in the browser. Structuring uses AI, with a heuristic parser as backup.
+// A PDF is read on the server, which also returns its text blocks so the page can show and edit the
+// PDF itself (see source.ts). Structuring uses AI, with a heuristic parser as backup.
 
-import { extractFile } from "./api";
-import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume, type SectionKey } from "./schema";
-import type { EntryShape } from "./page/layout";
+import { extractFile, type ExtractedFile } from "./api";
+import { loadPdfjs } from "./pdfjs";
+import { emptyResume, fileToBase64, normalizeResume, splitList, uid, type Resume } from "./schema";
 
 const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 
-/**
- * Gets the text out of an uploaded resume. PDF and Word files are read on the server (which keeps
- * lines, bullets and columns in order); if that fails, the browser reads them instead.
- */
 export interface ProcessedFile {
   text: string;
-  style?: Record<string, unknown>; // measured design of an uploaded PDF / Word file
+  pdf?: { b64: string; name: string; info: ExtractedFile }; // an uploaded PDF the page can edit in place
 }
 
 export async function processResumeFile(file: File): Promise<ProcessedFile> {
   const name = file.name.toLowerCase();
-  if (name.endsWith(".doc")) throw new Error("Old .doc files can't be read. In Word, use Save As → .docx (or PDF) first.");
-  const isDoc = name.endsWith(".pdf") || name.endsWith(".docx") || file.type === "application/pdf";
-  if (isDoc && file.size <= MAX_UPLOAD_BYTES) {
+  if (name.endsWith(".doc") || name.endsWith(".docx")) throw new Error("Please upload your resume as a PDF (in Word: File → Save As → PDF).");
+  const isPdf = name.endsWith(".pdf") || file.type === "application/pdf";
+  if (isPdf && file.size > MAX_UPLOAD_BYTES) throw new Error("That PDF is over 3 MB. Please upload a smaller file.");
+  if (isPdf) {
+    const b64 = await fileToBase64(file);
     try {
-      const info = await extractFile(file.name, await fileToBase64(file));
-      if (info.text.trim().length > 40) return { text: info.text, style: info.style };
+      const info = await extractFile(file.name, b64);
+      return { text: info.text, pdf: { b64, name: file.name, info } };
     } catch (err) {
-      console.warn("Server could not read the file, reading it in the browser instead:", err);
+      console.warn("Server could not read the PDF, reading its text in the browser instead:", err);
+      return { text: await pdfToText(file) };
     }
   }
-  return { text: await fileToText(file) };
-}
-
-async function fileToText(file: File): Promise<string> {
-  const name = file.name.toLowerCase();
-  if (file.size > 5 * 1024 * 1024) throw new Error("That file is over 5 MB. Try uploading a smaller file.");
-  if (name.endsWith(".pdf") || file.type === "application/pdf") return pdfToText(file);
-  if (name.endsWith(".docx")) return docxToText(file);
-  if (name.endsWith(".json")) return await file.text();
-  if (name.endsWith(".txt") || name.endsWith(".md") || file.type.startsWith("text/")) return await file.text();
-  throw new Error("Please upload a PDF, Word (.docx) or text file.");
+  if (file.size > 1024 * 1024) throw new Error("That file is too big for a resume. Please upload a PDF.");
+  if (name.endsWith(".json") || name.endsWith(".txt") || name.endsWith(".md") || file.type.startsWith("text/")) return { text: await file.text() };
+  throw new Error("Please upload a PDF, a text file or a JSON export.");
 }
 
 async function pdfToText(file: File): Promise<string> {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+  const pdfjs = await loadPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
   const pages: string[] = [];
   for (let p = 1; p <= Math.min(doc.numPages, 6); p++) {
@@ -75,66 +66,6 @@ async function pdfToText(file: File): Promise<string> {
     throw new Error("This PDF looks like a scanned image, so its text can't be read. Paste the text instead.");
   }
   return text;
-}
-
-async function docxToText(file: File): Promise<string> {
-  const mammoth = await import("mammoth");
-  const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-  return result.value;
-}
-
-/**
- * Draw an imported resume in the uploaded file's own design ("Your format"): its fonts, sizes,
- * margins, heading style and heading words, as measured by the server.
- */
-export function withDetectedStyle(r: Resume, style: Record<string, unknown> | undefined, text = ""): Resume {
-  if (!style || Object.keys(style).length < 4) return r;
-  const { titles, page, order, ...custom } = style as { titles?: Record<string, string>; page?: string; order?: string[] };
-  const entry = entryShape(text, r.experience.map((e) => [e.role, e.company]));
-  const edu = entryShape(text, r.education.map((e) => [e.degree, e.institution]));
-  return normalizeResume({
-    ...r,
-    layout: {
-      ...r.layout,
-      template: "custom",
-      custom: { ...custom, ...(entry && { entry }), ...(edu && { edu }) },
-      order: fileOrder(order, r.layout.order),
-      titles: titles ?? r.layout.titles,
-      page: page === "Letter" ? "Letter" : "A4",
-    },
-  });
-}
-
-/** The sections in the file's order; sections the file doesn't have keep their usual place after them. */
-function fileOrder(order: string[] | undefined, current: SectionKey[]): SectionKey[] {
-  const known = (order ?? []).filter((k): k is SectionKey => (current as string[]).includes(k));
-  return [...new Set([...known, ...current])];
-}
-
-/**
- * How the file wrote an entry's two names: "Job title, Company" on one line (and with what between them),
- * or one per line, and which came first. Read from the file's text once the AI has found the names.
- */
-export function entryShape(text: string, pairs: string[][]): EntryShape | undefined {
-  const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
-  const lines = text.split("\n").map(norm);
-  const all = lines.join("\n");
-  for (const [rawA, rawB] of pairs) {
-    const a = norm(rawA ?? "");
-    const b = norm(rawB ?? "");
-    if (a.length < 2 || b.length < 2 || a.includes(b) || b.includes(a)) continue;
-    for (const line of lines) {
-      const ia = line.indexOf(a);
-      const ib = line.indexOf(b);
-      if (ia < 0 || ib < 0) continue;
-      const join = ia < ib ? line.slice(ia + a.length, ib) : line.slice(ib + b.length, ia);
-      if (join.length <= 5) return { line: "one", first: ia < ib ? "a" : "b", join: join || " " };
-    }
-    const ia = all.indexOf(a);
-    const ib = all.indexOf(b);
-    if (ia >= 0 && ib >= 0) return { line: "two", first: ia < ib ? "a" : "b", join: "" };
-  }
-  return undefined;
 }
 
 /** If the text is our own JSON export (or the old app's), use it directly. */

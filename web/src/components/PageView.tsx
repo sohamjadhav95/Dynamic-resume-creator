@@ -102,27 +102,35 @@ function contextOf(r: Resume, path: string): string {
   return "";
 }
 
-function FieldEditor({
+export function FieldEditor({
   field,
   scale,
   pageWidth,
   pageHeight,
   onClose,
+  fallback = "",
+  separator,
+  inPdf = false,
+  problem = "",
 }: {
   field: Field;
   scale: number;
   pageWidth: number;
   pageHeight: number;
   onClose: () => void;
+  fallback?: string; // text to start from when the field has no value yet (a PDF block's own text)
+  separator?: string; // how list items are joined on the page
+  inPdf?: boolean; // editing an uploaded PDF: text only, no adding or moving bullets
+  problem?: string; // e.g. "too long for its lines"
 }) {
   const { resume, edit } = useStore();
   const { setSelected, setEditing } = useSelection();
   const latest = useRef(resume);
   latest.current = resume;
   const path = field.path;
-  const raw = getPath(resume, path);
+  const raw = getPath(resume, path) ?? fallback;
   const isList = Array.isArray(raw);
-  const sep = path === "certifications" ? " • " : path === "basics.links" ? "  |  " : ", ";
+  const sep = separator ?? (path === "certifications" ? " • " : path === "basics.links" ? "  |  " : ", ");
   const initial = useRef(isList ? (raw as string[]).join(sep) : String(raw ?? ""));
   const [draft, setDraft] = useState(initial.current);
   const box = useRef<HTMLDivElement>(null);
@@ -160,8 +168,23 @@ function FieldEditor({
     onClose();
   };
 
+  const aiButton = (
+    <button
+      className="btn btn-ghost btn-sm"
+      title="Rewrite this bullet with AI (right panel)"
+      onClick={() => {
+        setSelected({ path, context: contextOf(latest.current, path) });
+        window.dispatchEvent(new CustomEvent("tailor:open-panel", { detail: "right" }));
+        onClose();
+      }}
+    >
+      <Icon name="sparkle" size={13} /> AI rewrite
+    </button>
+  );
+
   const listOps = () => {
     if (!bullet) return null;
+    if (inPdf) return aiButton;
     const listPath = bullet[1];
     const idx = Number(bullet[2]);
     const list = [...((getPath(latest.current, listPath) as string[]) ?? [])];
@@ -205,17 +228,7 @@ function FieldEditor({
         >
           <Icon name="trash" size={13} /> Delete
         </button>
-        <button
-          className="btn btn-ghost btn-sm"
-          title="Rewrite this bullet with AI (right panel)"
-          onClick={() => {
-            setSelected({ path, context: contextOf(latest.current, path) });
-            window.dispatchEvent(new CustomEvent("tailor:open-panel", { detail: "right" }));
-            onClose();
-          }}
-        >
-          <Icon name="sparkle" size={13} /> AI rewrite
-        </button>
+        {aiButton}
       </>
     );
   };
@@ -237,6 +250,11 @@ function FieldEditor({
         <span className="grow" />
         <span className="hint">{draft.length} characters</span>
       </div>
+      {problem && (
+        <p className="fe-problem" role="status">
+          {problem}
+        </p>
+      )}
       <textarea
         ref={ta}
         className="textarea"

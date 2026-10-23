@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { streamAi } from "../lib/api";
-import { processResumeFile, heuristicParse, tryJson, withDetectedStyle } from "../lib/importing";
+import { processResumeFile, heuristicParse, tryJson, type ProcessedFile } from "../lib/importing";
+import { attachPdf } from "../lib/source";
 import { normalizeResume, type Resume } from "../lib/schema";
 import { Icon } from "./Icon";
 import { Dialog, useToast } from "./ui";
@@ -11,7 +12,7 @@ export function ImportDialog({
   onClose,
 }: {
   initialTab?: "upload" | "paste";
-  onDone: (resume: Resume) => void;
+  onDone: (resume: Resume, pdf?: ProcessedFile["pdf"]) => void;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -23,12 +24,13 @@ export function ImportDialog({
   const abort = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const structure = async (raw: string, style?: Record<string, unknown>) => {
+  const structure = async (raw: string, pdf?: ProcessedFile["pdf"]) => {
     setError("");
-    const finish = (r: Resume) => onDone(withDetectedStyle(r, style, raw));
+    // An uploaded PDF stays the page itself: its blocks are tied to the fields the AI found.
+    const finish = async (r: Resume) => onDone(pdf ? await attachPdf(r, pdf) : r, pdf);
     const json = tryJson(raw);
     if (json) {
-      finish(json);
+      await finish(json);
       return;
     }
     if (raw.trim().length < 40) {
@@ -47,17 +49,17 @@ export function ImportDialog({
         abort.current.signal,
       );
       if (final.type === "result") {
-        finish(normalizeResume(final.data.data));
+        await finish(normalizeResume(final.data.data));
         return;
       }
       toast({
         message:
           final.type === "limit" ? final.data.message : "AI is unavailable, so we used quick import. Please check each section.",
       });
-      finish(heuristicParse(raw));
+      await finish(heuristicParse(raw));
     } catch (e) {
       if (abort.current?.signal.aborted) {
-        finish(heuristicParse(raw));
+        await finish(heuristicParse(raw));
         return;
       }
       setError((e as Error).message);
@@ -73,7 +75,7 @@ export function ImportDialog({
     try {
       const proc = await processResumeFile(file);
       setBusy(null);
-      await structure(proc.text, proc.style);
+      await structure(proc.text, proc.pdf);
     } catch (e) {
       setBusy(null);
       setError((e as Error).message);
@@ -131,12 +133,12 @@ export function ImportDialog({
           <Icon name="upload" size={28} />
           <p style={{ margin: "10px 0 4px", fontWeight: 600 }}>Drop your resume here, or click to choose</p>
           <p className="hint" style={{ margin: 0 }}>
-            PDF, Word (.docx), text, or a JSON file (e.g. your master_resume.json) · max 3 MB
+            Your resume as a PDF (it stays exactly as it looks), a text file, or a JSON export · max 3 MB
           </p>
           <input
             ref={fileInput}
             type="file"
-            accept=".pdf,.docx,.txt,.md,.json,application/pdf"
+            accept=".pdf,.txt,.md,.json,application/pdf"
             hidden
             onChange={(e) => onFile(e.target.files?.[0])}
           />

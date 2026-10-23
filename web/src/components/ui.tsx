@@ -1,6 +1,7 @@
 // Shared UI plumbing: toasts, dialogs, menus, media queries.
 
 import {
+  Component,
   createContext,
   useCallback,
   useContext,
@@ -252,4 +253,26 @@ export function useLayoutMode(): LayoutMode {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   return mode;
+}
+
+/** Keeps one broken part (e.g. the page) from blanking the whole app; shows a way back instead. */
+export class Guard extends Component<{ children: ReactNode; label: string }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    console.error(`${this.props.label} failed:`, error);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="empty-state" role="alert">
+        <p>Something went wrong showing {this.props.label}. Your work is saved.</p>
+        <button className="btn btn-sm" onClick={() => this.setState({ error: null })}>
+          Try again
+        </button>
+      </div>
+    );
+  }
 }

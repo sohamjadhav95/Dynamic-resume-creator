@@ -2,6 +2,7 @@
 
 import { getAccessToken } from "./supabase";
 import { loadPrefs } from "./prefs";
+import type { Sheet } from "./source";
 
 export interface PublicConfig {
   supabase: { url: string; anonKey: string } | null;
@@ -137,13 +138,31 @@ export function warmUp(): void {
   fetch("/api/health").catch(() => {});
 }
 
-// ------------------------------------------------------------------ uploaded files (keep the original design)
+// ------------------------------------------------------------------ uploaded PDFs (edited in place)
+
+/** One text block of an uploaded PDF: a bullet, a paragraph, a "Label: ..." line or a title. */
+export interface FileBlock {
+  id: string;
+  page: number;
+  kind: "heading" | "bullet" | "labeled" | "summary" | "text";
+  section: string;
+  text: string; // without the bullet sign or "Label:" in front
+  prefix: string;
+  lines: number[][]; // [x0, y0, x1, y1] of each line, in PDF points from the top left
+}
 
 export interface ExtractedFile {
-  file_type: "pdf" | "docx";
-  pages: number;
+  pages: { width: number; height: number }[];
   text: string;
-  style?: Record<string, unknown>; // the file's measured design (backend/fileedit/style.py)
+  blocks: FileBlock[];
+}
+
+export interface RenderResult {
+  id: string;
+  status: "applied" | "unchanged" | "too_long" | "missing";
+  lines?: number; // lines the block has
+  used?: number; // lines the new text took
+  over?: number; // too long: about how many characters to cut
 }
 
 async function postJson<T>(path: string, body: unknown, offlineMessage: string): Promise<T> {
@@ -157,7 +176,21 @@ async function postJson<T>(path: string, body: unknown, offlineMessage: string):
   return (await res.json()) as T;
 }
 
-/** Reads the text of an uploaded PDF or Word file on the server (keeps lines and bullets in order). */
+/** Reads an uploaded PDF on the server: its text and its blocks. */
 export function extractFile(filename: string, fileBase64: string): Promise<ExtractedFile> {
   return postJson("/api/file/extract", { filename, file_base64: fileBase64 }, "Could not reach the server to read this file.");
+}
+
+/** Writes changed blocks into the original PDF. */
+export function renderFile(
+  fileBase64: string,
+  edits: Record<string, string>,
+  paper?: "A4" | "Letter",
+  fit: "shrink" | "pages" = "shrink",
+): Promise<{ file_base64: string; results: RenderResult[]; sheets: Sheet[] | null }> {
+  return postJson(
+    "/api/file/render",
+    { file_base64: fileBase64, edits: Object.entries(edits).map(([id, text]) => ({ id, text })), paper: paper ?? null, fit },
+    "Could not reach the server to update your PDF.",
+  );
 }

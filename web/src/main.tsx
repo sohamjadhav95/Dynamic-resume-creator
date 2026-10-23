@@ -9,7 +9,6 @@ import { App } from "./App";
 import { ToastProvider } from "./components/ui";
 import { applyTheme, loadPrefs } from "./lib/prefs";
 import { SelectionProvider } from "./lib/selection";
-import { loadLocal } from "./lib/storage";
 import { initialState, StoreProvider } from "./lib/store";
 
 applyTheme(loadPrefs().theme);
@@ -17,7 +16,8 @@ applyTheme(loadPrefs().theme);
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ToastProvider>
-      <StoreProvider initial={initialState(loadLocal())}>
+      {/* Starts empty: App loads the signed-in account, or this browser's guest workspace. */}
+      <StoreProvider initial={initialState()}>
         <SelectionProvider>
           <App />
         </SelectionProvider>

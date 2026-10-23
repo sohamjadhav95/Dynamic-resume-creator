@@ -27,19 +27,11 @@ export interface Insights {
 }
 
 export interface TailorOptions {
-  bullets_per_role: number;
-  bullets_per_project: number;
-  max_words_per_bullet: number;
-  one_page: boolean;
   tone: "balanced" | "technical" | "leadership" | "concise";
   instructions: string;
 }
 
 export const DEFAULT_OPTIONS: TailorOptions = {
-  bullets_per_role: 3,
-  bullets_per_project: 2,
-  max_words_per_bullet: 30,
-  one_page: true,
   tone: "balanced",
   instructions: "",
 };
@@ -396,7 +388,7 @@ export async function retryRefused(
 // ------------------------------------------------------------------ offline engine
 
 /** The no-AI engine: put the most relevant content first. Never rewrites or removes anything. */
-export function offlineTailor(master: Resume, jd: string, _options: TailorOptions = DEFAULT_OPTIONS): {
+export function offlineTailor(master: Resume, jd: string): {
   resume: Resume;
   insights: Insights;
 } {

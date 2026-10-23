@@ -241,12 +241,6 @@ button.chip:hover {
   background: var(--surface-sunk);
   color: var(--ink-2);
 }
-.badge .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
 .badge.ok {
   background: var(--moss-soft);
   color: var(--moss);
@@ -299,26 +293,12 @@ button.chip:hover {
 .panel-section:last-child {
   border-bottom: 0;
 }
-.step-title {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 0 0 12px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: -0.01em;
-  font-variation-settings: "opsz" 48;
-}
 .step-num {
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 500;
   color: var(--accent-strong);
   font-size: 15px;
-}
-.step-title .spacer {
-  flex: 1;
 }
 .muted {
   color: var(--ink-3);
@@ -822,11 +802,6 @@ details.options .body {
   padding: 4px 12px 12px;
   display: grid;
   gap: 12px;
-}
-.options-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
 }
 .check {
   display: flex;
@@ -1529,19 +1504,7 @@ details.options .body {
   .start-grid {
     grid-template-columns: 1fr;
   }
-  .options-grid {
-    grid-template-columns: 1fr;
-  }
 }
-
-.loading-screen {
-  height: 100dvh;
-  display: grid;
-  place-items: center;
-  color: var(--ink-3);
-}
-
-
 
 /* ---------------------------------------------------------------- collapsible panels */
 .panel {
@@ -1592,6 +1555,68 @@ details.options .body {
   color: var(--ink-2);
   font-size: 13px;
 }
-.warn-text {
-  color: var(--amber);
+
+/* First paint while we find out who is signed in */
+.boot {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--ink);
+  background: var(--canvas);
+  font-size: 15px;
+}
+
+/* Uploaded PDF view */
+.pdf-page {
+  position: relative;
+}
+.pdf-page canvas {
+  display: block;
+}
+.pdf-hits {
+  position: absolute;
+  inset: 0;
+}
+.pdf-hits .hit.bad {
+  fill: rgba(200, 40, 40, 0.1);
+  stroke: rgba(200, 40, 40, 0.75);
+  stroke-width: 0.8;
+}
+.pdf-hits .paper-edge {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.8;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+.fe-problem {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--accent-strong);
+}
+.canvas-hint.bad {
+  color: var(--accent-strong);
+}
+.empty-state {
+  max-width: 420px;
+  margin: 60px auto;
+  text-align: center;
+}
+.pdf-hits .a4-limit line {
+  stroke: var(--accent-strong);
+  stroke-width: 0.9;
+  stroke-dasharray: 6 4;
+}
+.pdf-hits .a4-limit text {
+  fill: var(--accent-strong);
+  font: 600 8px var(--font-ui);
+  pointer-events: none;
+}
+.select-sm {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  width: auto;
 }

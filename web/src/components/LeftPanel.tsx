@@ -6,15 +6,64 @@ import { SECTION_LABELS, clone, uid, type Resume, type SectionKey, type Template
 import { useSelection } from "../lib/selection";
 import { MASTER, useStore } from "../lib/store";
 import { Icon } from "./Icon";
-import { Panel } from "./ui";
+import { Panel, useToast } from "./ui";
 
 export function LeftPanel({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
+  const { resume } = useStore();
   return (
     <>
       <JobCard onTailor={onTailor} busy={busy} />
-      <SectionsCard />
-      <DesignCard />
+      {resume.layout.source ? (
+        <PdfCard />
+      ) : (
+        <>
+          <SectionsCard />
+          <DesignCard />
+        </>
+      )}
     </>
+  );
+}
+
+// ------------------------------------------------------------------ 2 · Your PDF (an uploaded file)
+
+function PdfCard() {
+  const { resume, edit, state } = useStore();
+  const toast = useToast();
+  const src = resume.layout.source!;
+  const tied = src.blocks.filter((b) => b.path).length;
+  const toTemplate = () => {
+    const { source: _source, ...layout } = resume.layout;
+    edit({ ...resume, layout });
+    toast({ message: "Now drawn from your content, so you can add, move and hide sections. Undo (Ctrl+Z) brings your PDF back." });
+  };
+  return (
+    <Panel
+      flat
+      id="step-sections"
+      title={
+        <>
+          <span className="step-num">2</span> Your PDF
+        </>
+      }
+    >
+      <div className="stack">
+        <p className="hint" style={{ margin: 0 }}>
+          <strong>{src.name || "Your resume"}</strong> is shown exactly as you uploaded it. Click any text on the page to
+          change it; everything else stays as it is. Tailoring rewrites your summary, bullets and skills right in the PDF
+          ({tied} of them are linked).
+        </p>
+        <p className="hint" style={{ margin: 0 }}>
+          New text has to fit the lines the old text used. If it doesn&apos;t, the page keeps the old text and tells you
+          how much to cut.
+        </p>
+        {state.activeId === MASTER && (
+          <button className="btn btn-sm" onClick={toTemplate}>
+            Use a template instead
+          </button>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -419,11 +468,11 @@ function DesignCard() {
     >
       <div className="stack">
         <div className="tpl-picker" role="group" aria-label="Template">
-          {(L.custom ? [{ id: "custom" as TemplateId, name: "Your format" }, ...TEMPLATES] : TEMPLATES).map((t) => (
+          {TEMPLATES.map((t) => (
             <button key={t.id} className="tpl-option" aria-pressed={L.template === t.id} onClick={() => set({ template: t.id })}>
               <span className={`tpl-thumb ${t.id}`} aria-hidden="true">
                 <i className="h" />
-                <i style={{ width: "80%", margin: t.id === "classic" || t.id === "original" || t.id === "custom" ? "0 auto" : undefined }} />
+                <i style={{ width: "80%", margin: t.id === "classic" || t.id === "original" ? "0 auto" : undefined }} />
                 <i className="s" />
                 <i />
                 <i style={{ width: "85%" }} />

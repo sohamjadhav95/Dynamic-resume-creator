@@ -1,18 +1,15 @@
-"""In-place editing of uploaded PDF / Word resumes: layout must never change."""
+"""Editing an uploaded PDF in place: only the changed text moves, nothing else on the page."""
 
 import base64
-import io
-import json
 
-import docx
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
 from backend import app as app_module
 from backend import fileedit, limits
-from backend.ai.providers import Chunk
 from backend.config import get_settings
+from backend.fileedit import fonts, pdf_edit
 
 BULLET_1 = (
     "Built a data pipeline in Python and Airflow that loads sales data from 12 stores every night, cutting report "
@@ -20,7 +17,6 @@ BULLET_1 = (
 )
 BULLET_2 = "Set up Docker based test servers for 3 product teams."
 SKILLS = "Python, SQL, Airflow, Docker, Tableau"
-JD = "We are hiring a Data Engineer with Python, Airflow, SQL and Docker experience to build pipelines. " * 2
 
 
 def _wrap(text: str, font: pymupdf.Font, size: float, width: float) -> list[str]:
@@ -35,9 +31,9 @@ def _wrap(text: str, font: pymupdf.Font, size: float, width: float) -> list[str]
     return lines + [cur]
 
 
-def make_pdf() -> bytes:
+def make_pdf(width: float = 595, height: float = 842) -> bytes:
     doc = pymupdf.open()
-    page = doc.new_page(width=595, height=842)
+    page = doc.new_page(width=width, height=height)
     helv = pymupdf.Font("helv")
     page.insert_text((230, 50), "Jane Doe", fontname="hebo", fontsize=18)
     page.insert_text((50, 70), "jane@example.com | github.com/jane", fontname="helv", fontsize=9)
@@ -45,9 +41,8 @@ def make_pdf() -> bytes:
     page.insert_text((50, 116), "Data Engineer | Acme Retail", fontname="hebo", fontsize=10)
     y = 132.0
     for bullet in (BULLET_1, BULLET_2):
-        lines = _wrap(bullet, helv, 10, 485)
         page.insert_text((50, y), "•", fontname="helv", fontsize=10)
-        for line in lines:
+        for line in _wrap(bullet, helv, 10, 485):
             page.insert_text((60, y), line, fontname="helv", fontsize=10)
             y += 12
         y += 4
@@ -58,114 +53,139 @@ def make_pdf() -> bytes:
     return doc.tobytes()
 
 
-def make_docx() -> bytes:
-    d = docx.Document()
-    d.add_paragraph().add_run("Jane Doe").bold = True
-    d.add_paragraph().add_run("EXPERIENCE").bold = True
-    p = d.add_paragraph()
-    p.add_run("•")
-    p.add_run("\t" + BULLET_1)
-    d.add_paragraph().add_run("SKILLS").bold = True
-    p = d.add_paragraph()
-    p.add_run("Languages: ").bold = True
-    p.add_run(SKILLS)
-    out = io.BytesIO()
-    d.save(out)
-    return out.getvalue()
+def text_of(data: bytes) -> str:
+    return " ".join(" ".join(p.get_text().split()) for p in pymupdf.open(stream=data))
 
 
-def seg(extracted, kind):
-    return next(s for s in extracted.segments if s.kind == kind)
+def block(info: dict, start: str) -> dict:
+    return next(b for b in info["blocks"] if b["text"].startswith(start))
 
 
-def pdf_text(data: bytes) -> str:
-    return " ".join(pymupdf.open(stream=data, filetype="pdf")[0].get_text().split())
+@pytest.fixture(autouse=True)
+def offline_fonts(monkeypatch):
+    monkeypatch.setattr(pdf_edit, "google_font", lambda *a: None)  # tests never download fonts
 
 
-# ---------------------------------------------------------------- PDF
+def test_extract_lists_every_block_with_its_place():
+    info = fileedit.extract(make_pdf())
+    assert info["pages"] == [{"width": 595.0, "height": 842.0}]
+    kinds = {b["text"][:12]: b["kind"] for b in info["blocks"]}
+    assert kinds["EXPERIENCE"] == "heading" and kinds["jane@example"] == "text"
+    first = block(info, "Built a data")
+    assert first["kind"] == "bullet" and pdf_edit.BULLET_RE.match(first["prefix"]) and len(first["lines"]) == 2
+    x0, y0, x1, y1 = first["lines"][0]
+    assert 45 < x0 < 62 and y0 < y1 and x1 > 400
+    skills = block(info, "Python, SQL")
+    assert skills["kind"] == "labeled" and skills["prefix"] == "Languages:"
+    assert "Jane Doe" in info["text"] and "EXPERIENCE" in info["text"]
 
 
-def test_pdf_finds_bullets_and_skills_but_not_names():
-    ex = fileedit.extract("pdf", make_pdf())
-    bullet = seg(ex, "bullet")
-    assert bullet.lines >= 2 and bullet.text.startswith("Built a data pipeline")
-    skills = seg(ex, "skills")
-    assert skills.prefix == "Languages:" and skills.text == SKILLS
-    editable = " ".join(s.text for s in ex.segments)
-    assert "Jane Doe" not in editable and "jane@example.com" not in editable and "Acme" not in editable
-
-
-def test_pdf_same_size_rewrite_is_written_in_place():
+def test_rewrite_is_written_in_place_and_nothing_else_moves():
     data = make_pdf()
-    bullet = seg(fileedit.extract("pdf", data), "bullet")
-    new = (
-        "Built a nightly Python and Airflow pipeline that loads sales data from 12 stores, cutting report time by "
-        "40% and ending manual spreadsheet work for the finance team members."
+    info = fileedit.extract(data)
+    first = block(info, "Built a data")
+    new = BULLET_1.replace("Built a data pipeline", "Made a sales pipeline")
+    out, results = fileedit.apply(data, {first["id"]: new})
+    assert results == [{"id": first["id"], "status": "applied", "lines": 2, "used": 2}]
+    text = text_of(out)
+    assert "Made a sales pipeline" in text and "Built a data" not in text
+    assert "Jane Doe" in text and BULLET_2 in text
+    after = fileedit.extract(out)
+    assert block(after, "Set up Docker")["lines"] == block(info, "Set up Docker")["lines"]  # the next bullet stayed put
+
+
+def test_text_that_needs_more_lines_is_refused():
+    data = make_pdf()
+    second = block(fileedit.extract(data), "Set up Docker")
+    out, results = fileedit.apply(data, {second["id"]: BULLET_2 + " " + BULLET_1})
+    assert results[0]["status"] == "too_long" and results[0]["over"] > 20
+    assert BULLET_2 in text_of(out)
+
+
+def test_people_may_change_anything_shorter_names_numbers_titles():
+    data = make_pdf()
+    info = fileedit.extract(data)
+    edits = {
+        block(info, "Built a data")["id"]: "Built a pipeline for 15 stores.",  # shorter, new number
+        block(info, "Jane Doe")["id"]: "Jane Q. Doe",
+        block(info, "EXPERIENCE")["id"]: "WORK",
+    }
+    out, results = fileedit.apply(data, edits)
+    assert all(r["status"] == "applied" for r in results)
+    assert next(r for r in results if r["id"] == block(info, "Built a data")["id"])["used"] == 1
+    text = text_of(out)
+    assert "Built a pipeline for 15 stores." in text and "Jane Q. Doe" in text and "WORK" in text
+
+
+def test_a_label_stays_and_an_emptied_block_disappears():
+    data = make_pdf()
+    info = fileedit.extract(data)
+    skills, second = block(info, "Python, SQL"), block(info, "Set up Docker")
+    out, _ = fileedit.apply(data, {skills["id"]: "SQL, Python, Docker, Airflow, Tableau", second["id"]: ""})
+    text = text_of(out)
+    assert "Languages: SQL, Python, Docker" in text
+    assert "Set up Docker" not in text
+
+
+def test_bold_label_inside_a_bullet_is_kept():
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((50, 100), "•", fontname="helv", fontsize=10)
+    page.insert_text((60, 100), "TensorFlow:", fontname="hebo", fontsize=10)
+    page.insert_text(
+        (60 + pymupdf.Font("hebo").text_length("TensorFlow: ", 10), 100),
+        "Built models for search ranking.",
+        fontname="helv",
+        fontsize=10,
     )
-    out, results = fileedit.apply("pdf", data, {bullet.id: new})
-    assert results[0].status == "applied", results[0].note
-    assert pymupdf.open(stream=out, filetype="pdf").page_count == 1
-    text = pdf_text(out)
-    assert "nightly Python and Airflow pipeline" in text
-    assert "removing manual spreadsheet work" not in text
-    for kept in ("Jane Doe", "EXPERIENCE", "Data Engineer | Acme Retail", BULLET_2, "Languages:"):
-        assert kept in text
+    info = fileedit.extract(doc.tobytes())
+    b = block(info, "Built models")
+    assert b["prefix"].endswith("TensorFlow:")
+    out, _ = fileedit.apply(doc.tobytes(), {b["id"]: "Trained models for ranking."})
+    assert "TensorFlow: Trained models for ranking." in text_of(out)
 
 
-def test_pdf_refuses_longer_text_and_dropped_numbers():
-    data = make_pdf()
-    bullet = seg(fileedit.extract("pdf", data), "bullet")
-    too_long = BULLET_1 + " It also sent a short summary email to every store manager each morning."
-    _, results = fileedit.apply("pdf", data, {bullet.id: too_long})
-    assert results[0].status == "too_long"
-    no_number = BULLET_1.replace("by 40%", "a lot")
-    _, results = fileedit.apply("pdf", data, {bullet.id: no_number})
-    assert results[0].status == "changed_facts" and "40" in results[0].note
+def test_word_bullet_signs_are_joined_to_their_line():
+    def char(c, x, font="helv"):
+        return pdf_edit.Char(c, x, 90, x + 5, 102, x, 100, font, 10, False, False, 0)
+
+    sign = pdf_edit.Line(0, [char("", 50, "SymbolMT")])
+    words = pdf_edit.Line(0, [char(c, 68 + i * 5) for i, c in enumerate("Led a team")])
+    joined = pdf_edit._join_bullets([sign, words])
+    assert len(joined) == 1 and pdf_edit.BULLET_RE.match(joined[0].text)
 
 
-def test_pdf_skills_keep_their_label():
-    data = make_pdf()
-    skills = seg(fileedit.extract("pdf", data), "skills")
-    out, results = fileedit.apply("pdf", data, {skills.id: "Python, Airflow, SQL, Docker, Tableau"})
-    assert results[0].status == "applied"
-    assert "Languages: Python, Airflow, SQL, Docker, Tableau" in pdf_text(out)
+def test_pages_can_be_put_on_a4_or_letter():
+    letter = make_pdf(612, 792)
+    a4, sheets = fileedit.fit_to_paper(letter, "A4")
+    page = pymupdf.open(stream=a4)[0]
+    assert (round(page.rect.width), round(page.rect.height)) == (595, 842)
+    assert "Jane Doe" in page.get_text()  # still real, selectable text
+    assert sheets[0]["page"] == 0 and sheets[0]["scale"] < 1
 
 
-def test_pdf_only_editable_lines_can_change():
-    data = make_pdf()
-    ex = fileedit.extract("pdf", data)
-    name_id = next(o["id"] for o in ex.outline if o["text"] == "Jane Doe")
-    _, results = fileedit.apply("pdf", data, {name_id: "John Smith"})
-    assert results[0].status == "not_allowed"
+def test_a_tall_page_continues_on_a_second_sheet_between_lines():
+    doc = pymupdf.open()
+    page = doc.new_page(width=612, height=1008)  # US Legal
+    for i in range(70):
+        page.insert_text(
+            (60, 40 + i * 13.5), f"Line {i} of a long resume with enough words", fontname="helv", fontsize=10
+        )
+    out, sheets = fileedit.fit_to_paper(doc.tobytes(), "A4", "pages")
+    pages = pymupdf.open(stream=out)
+    assert pages.page_count == 2 and len(sheets) == 2
+    words = [p.get_text() for p in pages]
+    assert "Line 0 " in words[0] and "Line 69 " in words[1]
+    assert sum(t.count("Line ") for t in words) == 70  # no line cut in half or lost
+    assert sheets[1]["y0"] == sheets[0]["y1"] and sheets[1]["top"] > 0
 
 
-# ---------------------------------------------------------------- Word
-
-
-def test_docx_rewrite_keeps_bullet_and_bold_label():
-    data = make_docx()
-    ex = fileedit.extract("docx", data)
-    bullet, skills = seg(ex, "bullet"), seg(ex, "skills")
-    new_bullet = (
-        "Built a nightly Python and Airflow pipeline that loads sales data from 12 stores, cutting report time by "
-        "40% and ending manual spreadsheet work for the finance team."
-    )
-    out, results = fileedit.apply(
-        "docx", data, {bullet.id: new_bullet, skills.id: "Python, Airflow, SQL, Docker, Tableau"}
-    )
-    assert [r.status for r in results] == ["applied", "applied"]
-    paras = [p for p in docx.Document(io.BytesIO(out)).paragraphs if p.text.strip()]
-    assert paras[2].text == "•\t" + new_bullet
-    assert paras[4].text == "Languages: Python, Airflow, SQL, Docker, Tableau"
-    assert paras[4].runs[0].bold is True and paras[4].runs[0].text == "Languages: "
-
-
-def test_docx_refuses_text_that_needs_more_lines():
-    data = make_docx()
-    bullet = seg(fileedit.extract("docx", data), "bullet")
-    longer = BULLET_1 + " It also emails a summary to every store manager."
-    _, results = fileedit.apply("docx", data, {bullet.id: longer})
-    assert results[0].status == "too_long"
+def test_font_names_become_families():
+    assert fonts.describe("ABCDEF+Lato-LightItalic", False, False) == ("Lato", 300, True)
+    assert fonts.describe("Arial-BoldMT", True, False) == ("Arimo", 700, False)
+    assert fonts.describe("Calibri", False, False)[0] == "Carlito"
+    assert fonts.describe("TimesNewRomanPSMT", False, False)[0] == "Tinos"
+    assert fonts.describe("SourceSansPro-Regular", False, False) == ("Source Sans Pro", 400, False)
 
 
 # ---------------------------------------------------------------- API
@@ -186,226 +206,30 @@ def b64(data: bytes) -> str:
 
 
 def test_api_extract_and_render(client):
-    data = make_pdf()
+    data = make_pdf(612, 792)
     res = client.post("/api/file/extract", json={"filename": "cv.pdf", "file_base64": b64(data)})
     assert res.status_code == 200
     info = res.json()
-    assert info["file_type"] == "pdf" and info["editable"] >= 2 and "Jane Doe" in info["text"]
-
-    skills = seg(fileedit.extract("pdf", data), "skills")
+    assert info["pages"][0]["width"] == 612 and "Jane Doe" in info["text"]
+    skills = block(info, "Python, SQL")
     res = client.post(
         "/api/file/render",
         json={
-            "file_type": "pdf",
             "file_base64": b64(data),
-            "edits": [{"id": skills.id, "text": "SQL, Python, Docker, Airflow, Tableau"}],
+            "edits": [{"id": skills["id"], "text": "SQL, Python, Docker, Airflow, Tableau"}],
+            "paper": "A4",
         },
     )
     assert res.status_code == 200
     body = res.json()
     assert body["results"][0]["status"] == "applied"
-    assert "SQL, Python, Docker" in pdf_text(base64.b64decode(body["file_base64"]))
+    out = base64.b64decode(body["file_base64"])
+    assert "SQL, Python, Docker" in text_of(out)
+    assert round(pymupdf.open(stream=out)[0].rect.width) == 595
+    assert body["sheets"][0]["width"] == 595.28
 
 
-def test_api_extract_rejects_other_files(client):
-    res = client.post("/api/file/extract", json={"filename": "cv.txt", "file_base64": b64(b"hello there " * 20)})
-    assert res.status_code == 422
-
-
-def test_api_file_tailor_writes_ai_edits_and_reports_refusals(client, monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    get_settings.cache_clear()
-    data = make_pdf()
-    ex = fileedit.extract("pdf", data)
-    bullet, skills = seg(ex, "bullet"), seg(ex, "skills")
-
-    async def fake_stream(self, model, system, prompt, schema, temperature):
-        if "refused" in system:  # the fix-up round: still too long, so the original stays
-            yield Chunk(
-                "text",
-                json.dumps(
-                    {
-                        "edits": [
-                            {
-                                "id": bullet.id,
-                                "text": BULLET_1 + " It also emailed every store manager a short daily summary.",
-                            }
-                        ]
-                    }
-                ),
-            )
-            return
-        assert "jane@example.com" not in prompt and "Jane Doe" not in prompt  # personal details never sent
-        assert f"[EDIT {skills.id}" in prompt
-        out = {
-            "job": {"title": "Data Engineer", "company": ""},
-            "edits": [
-                {"id": skills.id, "text": "Python, Airflow, SQL, Docker, Tableau"},
-                {"id": bullet.id, "text": BULLET_1 + " It also emailed every store manager a short daily summary."},
-            ],
-            "keywords": [{"term": "Airflow", "importance": "must"}],
-            "project_ideas": [],
-            "advice": [],
-        }
-        yield Chunk("text", json.dumps(out))
-
-    monkeypatch.setattr(app_module.GeminiProvider, "stream", fake_stream)
-    res = client.post(
-        "/api/file/tailor",
-        json={"file_type": "pdf", "file_base64": b64(data), "job_description": JD},
-    )
-    events = [b for b in res.text.split("\n\n") if b.startswith("event: result")]
-    assert events, res.text
-    payload = json.loads(events[0].split("data: ", 1)[1])["data"]
-    status = {r["id"]: r["status"] for r in payload["results"]}
-    assert status == {skills.id: "applied", bullet.id: "too_long"}
-    assert payload["edits"] == [{"id": skills.id, "text": "Python, Airflow, SQL, Docker, Tableau"}]
-    out = base64.b64decode(payload["file_base64"])
-    assert "Languages: Python, Airflow, SQL" in pdf_text(out)
-    assert BULLET_1.split(",")[0] in pdf_text(out)
-
-
-# ---------------------------------------------------------------- honesty screen
-
-
-def test_screen_blocks_skills_and_tools_the_resume_does_not_show():
-    from backend.fileedit.screen import new_terms, unsupported_skills
-
-    resume = "Python, SQL, Airflow, Docker\nBuilt pipelines with Airflow. Benchmarked U-Net (Dice 0.94) on cardiac CT."
-    assert unsupported_skills("Python, SQL, Airflow", resume) == []
-    assert unsupported_skills("Python, Kubernetes, CT/MRI", resume) == ["Kubernetes", "CT/MRI"]
-    # A bullet may only name tools from itself or its own project / job lines.
-    assert new_terms("Built pipelines with Airflow.", "Built Airflow pipelines in Docker.", "Data Engineer | Acme") == [
-        "Docker"
-    ]
-    assert (
-        new_terms("Built pipelines with Airflow.", "Built Airflow pipelines in Docker.", "Stack: Docker, Airflow") == []
-    )
-    assert new_terms("Used Policy-as- Prompt rules.", "Used Policy-as-Prompt rules.", "") == []  # PDF line-split word
-    assert new_terms("Led 3 teams.", "Mentored 3 teams; Shipped weekly.", "") == []  # sentence starts are fine
-
-
-def test_api_refuses_borrowed_skills_in_file_tailoring(client, monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    get_settings.cache_clear()
-    data = make_pdf()
-    skills = seg(fileedit.extract("pdf", data), "skills")
-
-    async def fake_stream(self, model, system, prompt, schema, temperature):
-        if "refused" in system:
-            yield Chunk("text", json.dumps({"edits": [{"id": skills.id, "text": "Python, SQL, Airflow, Kubernetes"}]}))
-            return
-        out = {
-            "job": {"title": "Data Engineer", "company": ""},
-            "edits": [{"id": skills.id, "text": "Python, Kubernetes, SQL, Airflow, Docker"}],
-            "keywords": [],
-            "project_ideas": [],
-            "advice": [],
-        }
-        yield Chunk("text", json.dumps(out))
-
-    monkeypatch.setattr(app_module.GeminiProvider, "stream", fake_stream)
-    res = client.post("/api/file/tailor", json={"file_type": "pdf", "file_base64": b64(data), "job_description": JD})
-    payload = json.loads([b for b in res.text.split("\n\n") if b.startswith("event: result")][0].split("data: ", 1)[1])
-    result = payload["data"]["results"][0]
-    assert result["status"] == "changed_facts" and "Kubernetes" in result["note"]
-    assert "Kubernetes" not in pdf_text(base64.b64decode(payload["data"]["file_base64"]))
-
-
-# ---------------------------------------------------------------- style detection
-
-
-def make_serif_pdf() -> bytes:
-    doc = pymupdf.open()
-    page = doc.new_page(width=612, height=792)  # US Letter
-    page.insert_text((60, 70), "Jane Rivera", fontname="tibo", fontsize=22)
-    page.insert_text((60, 88), "jane@example.com | (415) 555-0142", fontname="tiro", fontsize=9)
-    y = 120.0
-    for heading, lines in (("Summary", [BULLET_2]), ("Experience", [BULLET_1, BULLET_2])):
-        page.insert_text((60, y), heading, fontname="tibo", fontsize=12, color=(0.12, 0.23, 0.37))
-        y += 16
-        for text in lines:
-            page.insert_text((60, y), "•", fontname="tiro", fontsize=10.5)
-            page.insert_text((74, y), text[:80], fontname="tiro", fontsize=10.5)
-            y += 14
-        y += 8
-    return doc.tobytes()
-
-
-def test_style_detection_reads_any_resume_design():
-    from backend.fileedit.style import detect_style
-
-    sans = detect_style("pdf", make_pdf())
-    assert sans["family"] == "sans" and sans["page"] == "A4"
-    assert sans["headerAlign"] == "center" and sans["name"] == 18 and sans["body"] == 10 and sans["bullet"] == "•"
-    assert sans["titles"]["experience"] == "EXPERIENCE"
-
-    serif = detect_style("pdf", make_serif_pdf())
-    assert serif["family"] == "serif" and serif["page"] == "Letter"
-    assert serif["name"] == 22 and serif["title"] == 12
-    assert serif["accent"] != "#000000"  # navy headings
-    assert serif["titles"] == {"summary": "Summary", "experience": "Experience"}
-    assert 55 <= serif["margin"]["side"] <= 65
-
-    word = detect_style("docx", make_docx())
-    assert word["page"] in ("A4", "Letter") and word["family"] == "sans"
-
-
-def make_teal_docx() -> bytes:
-    """A Word resume unlike the owner's: teal name and headings, headline above the contact line."""
-    import docx
-    from docx.enum.text import WD_TAB_ALIGNMENT
-    from docx.shared import Pt, RGBColor
-
-    d = docx.Document()
-    teal = RGBColor(0x0E, 0x6E, 0x6E)
-
-    def para(text, size=10.5, bold=False, italic=False, color=None, before=0, after=2):
-        p = d.add_paragraph()
-        p.paragraph_format.space_before, p.paragraph_format.space_after = Pt(before), Pt(after)
-        r = p.add_run(text)
-        r.bold, r.italic, r.font.size = bold, italic, Pt(size)
-        if color:
-            r.font.color.rgb = color
-        return p
-
-    para("Priya Nair", 20, bold=True, color=teal)
-    para("Registered Nurse (RN), BSN", 11, italic=True)
-    para("priya@example.com  •  (312) 555-0199  •  Chicago, IL", 9.5)
-    for title, rows in (("PROFESSIONAL EXPERIENCE", ["Staff Nurse — Rush Medical Center", "Nurse — Masonic"]),):
-        para(title, 11.5, bold=True, color=teal, before=9, after=3)
-        for row in rows:
-            p = para("", before=4)
-            p.paragraph_format.tab_stops.add_tab_stop(Pt(480), WD_TAB_ALIGNMENT.RIGHT)
-            p.add_run(row).bold = True
-            p.add_run("\t2019 – 2021")
-            d.add_paragraph("Cared for 4–5 telemetry patients per shift on a step-down unit.", style="List Bullet")
-            d.add_paragraph("Precepted new graduate nurses on the unit.", style="List Bullet")
-    para("EDUCATION", 11.5, bold=True, color=teal, before=9, after=3)
-    para("Bachelor of Science in Nursing — Loyola University Chicago")
-    out = io.BytesIO()
-    d.save(out)
-    return out.getvalue()
-
-
-def test_style_detection_reads_word_colours_and_header_order():
-    from backend.fileedit.style import detect_style
-
-    s = detect_style("docx", make_teal_docx())
-    assert s["accent"] == "#0e6e6e" and s["nameInAccent"] is True
-    assert s["badgeFirst"] is True and s["badgeItalic"] is True
-    assert s["datesBold"] is False
-    assert s["gaps"]["bullet"] == 0  # Word's list style ignores spacing between its own bullets
-    assert s["titles"]["experience"] == "PROFESSIONAL EXPERIENCE"
-
-
-def test_style_detection_never_fails():
-    from backend.fileedit.style import detect_style
-
-    assert detect_style("pdf", b"%PDF-1.4 broken") == {}
-
-
-def test_api_extract_returns_the_design(client):
-    res = client.post("/api/file/extract", json={"filename": "cv.pdf", "file_base64": b64(make_serif_pdf())})
-    assert res.status_code == 200
-    assert res.json()["style"]["family"] == "serif"
+def test_api_accepts_only_pdfs(client):
+    for name, data in (("cv.txt", b"hello there " * 20), ("cv.docx", b"PK\x03\x04" + b"0" * 200)):
+        res = client.post("/api/file/extract", json={"filename": name, "file_base64": b64(data)})
+        assert res.status_code == 422 and "PDF" in res.json()["error"]

@@ -8,14 +8,18 @@ export function Welcome({
   onSample,
   onBlank,
   onSignIn,
+  onSignOut,
   canSignIn,
+  email,
 }: {
   onUpload: () => void;
   onPaste: () => void;
   onSample: () => void;
   onBlank: () => void;
   onSignIn: () => void;
+  onSignOut: () => void;
   canSignIn: boolean;
+  email: string | null; // signed in as
 }) {
   return (
     <div className="welcome">
@@ -24,10 +28,19 @@ export function Welcome({
           <span className="brand">
             <BrandMark /> <span>Tailor</span>
           </span>
-          {canSignIn && (
-            <button className="btn btn-ghost" onClick={onSignIn}>
-              Sign in
-            </button>
+          {email ? (
+            <span className="row" style={{ gap: 8 }}>
+              <span className="hint">Signed in as {email}</span>
+              <button className="btn btn-ghost" onClick={onSignOut}>
+                Sign out
+              </button>
+            </span>
+          ) : (
+            canSignIn && (
+              <button className="btn btn-ghost" onClick={onSignIn}>
+                Sign in
+              </button>
+            )
           )}
         </header>
         <main className="welcome-hero" id="main">
@@ -47,7 +60,7 @@ export function Welcome({
                   <Icon name="upload" />
                 </span>
                 <strong>Upload my resume</strong>
-                <span>PDF or Word. We turn it into editable sections.</span>
+                <span>Your PDF, exactly as it looks. Click any line to edit it.</span>
               </button>
               <button className="start-card" onClick={onPaste}>
                 <span className="ico">

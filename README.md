@@ -1,72 +1,83 @@
 # Tailor — one resume, tailored to every job
 
-Paste a job post and get a version of your resume that speaks its language: same design, same size, one page,
-honest rewrites, and a live match score. Works like the original app: your resume is one JSON master, the page is a
-template you edit by clicking any text, and **PDF** saves exactly what you see.
+Paste a job post and get a version of your resume that speaks its language: honest rewrites, a live match score, and
+a PDF that looks exactly like yours. Upload your resume as a PDF and the page you edit **is your PDF**: fonts,
+photo, columns, colours and spacing stay exactly as they are; only the words you (or the AI) change are rewritten.
 
 ![Studio](docs/screenshots/studio.png)
 
 ## How tailoring works
 
-1. **Master resume.** Import your resume (PDF, Word, text, or a JSON file such as the old `master_resume.json`). It
-   becomes your master profile; tailoring never changes it, every job gets its own version.
+1. **Master resume.** Upload your resume as a PDF (or start from a template: paste text, a JSON export such as the old
+   `master_resume.json`, the sample, or a blank page). It becomes your master profile; tailoring never changes it,
+   every job gets its own version.
 2. **Rewrite.** The AI rewrites the summary and every bullet so the part each job or project shares with the job post
-   comes first, in plain words. Same number of bullets, about the same length, so the page keeps its size.
-3. **Skills (ATS keywords).** Like the original app, the job's important tools are added to the skills lines and the
-   least relevant ones removed; categories may be renamed for the role. Added skills are listed under **Tips** so you
+   comes first, in plain words. Same number of bullets, about the same length.
+3. **Skills (ATS keywords).** The job's important tools are added to the skills lines and the least relevant ones
+   removed (at most 4 new ones); categories may be renamed for the role. Added skills are listed under **Tips** so you
    can remove any you haven't used.
 4. **Checks, in code.** Every rewrite must keep all numbers, add no new ones, stay about the same length, and not name
-   tools or terms your resume doesn't show (bullets: only from that same job or project). A refused line gets one
-   more AI try with the reason; otherwise the original stays. Refused lines are listed under Tips.
-5. **Edit and export.** Click any text on the page to change it; click a missing keyword to swap it into your skills.
-   **PDF** downloads exactly the page you see.
+   tools or terms your resume doesn't show (bullets: only from that same job or project). Code also refuses a rewrite
+   that drops what a number measures ("0.9416 Dice score"), borrows a job-post word the resume never uses (a nurse's
+   "heparin drips" must not become "vasoactive drips") or pads a line with filler. A refused line gets one more AI try
+   with the reason; otherwise the original stays. Refused lines are listed under Tips.
+5. **Fits your PDF.** For an uploaded PDF the AI is told how many characters fill each line's space, and every rewrite
+   is written into the PDF and checked: one that would need an extra line, or leave an empty one, gets one more try
+   with the exact numbers, else the original line stays. Nothing else on the page ever moves.
+6. **Edit and export.** Click any text on the page to change it; **PDF** downloads exactly the page you see.
 
-## The page engine (why the format never breaks)
+## Your PDF, edited in place (`backend/fileedit/`, `web/src/lib/source.ts`)
 
-The page is **not** HTML printed by the browser (that changes with the browser, print settings, installed fonts and
-headers/footers, which is what used to push resumes to two pages). Instead `web/src/lib/page/`:
+Real resumes come in every design (photos, two columns, colour bars, icon fonts, LaTeX), so the app doesn't redraw
+an uploaded resume; it edits the file:
 
-1. **measures** every word with the exact metrics of the PDF Helvetica family (the same widths as Arial), with no
-   kerning, so measured width = drawn width;
-2. **lays out** the resume itself: justified bullets with a hanging indent, bold "Category:" labels, dates on the
-   right, a rule under each section title, and records which field every word belongs to;
-3. **keeps it on one page**: if content is too long it tightens spacing step by step, then text size (to 92% at most).
-   If even that is not one page (or the uploaded file itself had two pages) it keeps the normal look and flows onto a
-   second page, never leaving a heading alone at the bottom (the meter says by how many lines);
-4. draws that one layout twice: as SVG on screen (click any word to edit its field) and as a real PDF with `pdf-lib`
-   (selectable text in reading order, readable by applicant tracking systems).
+1. **Read** (PyMuPDF): every character with its font, size, colour and position, grouped into blocks: a bullet with
+   its wrapped lines, a paragraph, a "Label: a, b" line, a title. Word's separate bullet signs and bold labels inside
+   bullets ("**TensorFlow:** built…") are understood.
+2. **Link**: the AI splits the text into resume fields, and each field (summary, bullets, skills lines) is tied to the
+   block that shows it, by text similarity. Every other block (name, dates, headings, contact) is still editable.
+3. **Write**: to change a block, only its old characters are removed and the new words are drawn on the same
+   baselines, from the same start, in the same size and colour (justified if it was). The font is the file's own when
+   it has every letter, else the same family from Google Fonts (Lato, Roboto, Source Sans…) or a twin with equal widths
+   (Calibri → Carlito, Arial → Arimo, Times → Tinos), else a built-in PDF font. Text that needs more lines than the
+   block has is refused, with roughly how many characters to cut.
+4. **Show**: pdf.js draws the PDF; clickable areas sit over every block and open a small editor; the server writes
+   the change and the page updates a moment later.
 
-The default **Original** style reproduces the owner's PDF (measured from the file: A4, 15 mm sides, 17 pt name,
-7.6 pt contact line, 9 pt headings with a rule, 8.5 pt justified body). Classic, Modern and Compact are variations.
+**Paper size**: a PDF is shown at its own size (A4, Letter, Legal or anything else). If the page is longer than an A4
+page, a dashed line marks where A4 would end. The paper menu can also put it on A4 or Letter: **same size, more pages**
+(the width is fitted and a long page continues on the next sheet, cut between lines) or **shrink to fit each page**
+(scaled down evenly). The download uses the chosen paper.
 
-**Your format** (any uploaded resume): `backend/fileedit/style.py` measures the uploaded PDF or Word file — serif or
-sans, page size, margins, name / heading / body sizes, heading colour and words, rule lines, bullet sign and indents,
-spacing, header order (headline above or below the contact line), contact separator, justified or ragged text,
-regular or bold dates, section order and page count. On import the app also reads whether each job is written as
-"Job title, Company" on one line or on two lines. The page engine then draws the resume with those settings.
+To add, move or hide whole sections, **Use a template instead** turns the resume into a template page.
+
+## Template pages (`web/src/lib/page/`)
+
+Resumes without a PDF (pasted text, JSON, sample, blank) use the app's own page engine, never browser printing:
+
+1. **measures** every word with the exact metrics of the PDF Helvetica / Times families, with no kerning;
+2. **lays out** the resume: justified bullets with a hanging indent, bold "Category:" labels, dates on the right, a
+   rule under each section title, and records which field every word belongs to;
+3. **keeps it on one page** by tightening spacing, then text size (to 92% at most); if even that isn't one page it
+   keeps the normal look and flows onto a second page, never leaving a heading alone at the bottom;
+4. draws that one layout as SVG on screen and as a real PDF with `pdf-lib` (selectable text for applicant tracking
+   systems).
+
+The default **Original** style reproduces the owner's PDF (A4, 15 mm sides, 17 pt name, 9 pt headings with a rule,
+8.5 pt justified body). Classic, Modern and Compact are variations.
 
 ## What it does
 
 - **Studio layout**: build on the left, the real page in the middle, match score and AI tools on the right.
   On tablets the right panel becomes a tab; on phones there is a bottom tab bar.
-- **Master profile + versions**: you keep one master profile with everything you've done. Each job gets its own
-  tailored version; the master is never changed by tailoring.
-- **Honest by design**: the AI may rephrase and reorder, but never invent jobs, dates, numbers or projects. Numbers
-  are checked by code, not just requested in the prompt. Code also refuses a rewrite that drops what a number
-  measures ("0.9416 Dice score"), names a tool the job or project doesn't show, or borrows a job-post word the resume
-  never uses (a nurse's "heparin drips" must not become "vasoactive drips"). At most 4 skills come from the job post.
-  A **truth check** removes any skill the AI adds that is in neither your master profile nor the job post.
-  The old "invent a project for this job" slot is now **Project ideas**: suggestions you could build, shown on the side.
+- **Master profile + versions**: one master profile; each job gets its own tailored version.
 - **Instant match score** (runs in the browser, no AI needed): required vs nice-to-have keywords, found and missing,
-  and the job post with highlights. Click a missing skill to add it, but only if you really have it.
-- **Click-to-edit page**: click any text to open a small editor right there (the page updates as you type), with
-  undo/redo, move / add / delete bullets and AI rewrite of any bullet (stronger, shorter, add a keyword, fix grammar).
-- **Exact page meter** ("1 page" / "over by 3 lines") from the page engine, automatic fit to one page, 4 styles,
-  A4/Letter, spacing and heading color.
+  and the job post with highlights.
+- **Click-to-edit page** with undo/redo and AI rewrite of any bullet (stronger, shorter, add a keyword, fix grammar).
 - **Resizable, collapsible panels**: drag the edge of the side columns, or collapse them to a slim rail.
-- **Import** a PDF, Word file, pasted text or JSON; AI splits it into sections (with a non-AI parser as backup).
-- **Accounts are optional**: guests save in the browser; signing in (Google or email link) saves to the cloud.
-  The first sign-in moves the guest resume into the account.
+- **Accounts are optional**: guests save in this browser; signing in (Google or email link) saves resumes, versions
+  and uploaded PDFs to the account. The app opens straight into the signed-in account; a resume made as a guest moves
+  into an account only if you choose to; signing out leaves a clean start.
 - **Accessible**: keyboard everywhere, visible focus, screen-reader labels, WCAG AA contrast, reduced motion, dark mode.
 
 ## Which AI models, and why (all free tiers)
@@ -75,27 +86,17 @@ regular or bold dates, section order and page count. On import the app also read
 Groq · qwen3.8-27b  ─▶  Gemini · 3.1-flash-lite  ─▶  Gemini · 3.5-flash-lite  ─▶  Groq · gpt-oss-20b  ─▶  Offline engine
 ```
 
-The order was picked with `scripts/benchmark_models.py`, which sends every candidate model the real tailoring
-task for your resume and grades the answers with the app's own checks (fits the lines, keeps numbers, no invented
-skills), speed and rate limits:
-
-```bash
-python scripts/benchmark_models.py --file my_resume.pdf            # all candidates, in parallel
-python scripts/benchmark_models.py --file my_resume.pdf --only groq --runs 2
-```
-
-Results (Oct 2026): Groq's Qwen was fastest (~5 s) with the most usable rewrites; Gemini's lite models came next and run
-on another company's servers; the bigger Gemini models were "busy" most of the time and every free OpenRouter model
-was blocked, rate-limited or took minutes. Change the order without code via the `AI_CHAIN` environment variable.
+Groq's Qwen is fastest for short answers (reading a resume, rewriting one bullet). Its free tier only lets it write
+about 1,000 tokens a minute, too little for a whole tailored resume, so tailoring asks Gemini first. Change the order
+without code via the `AI_CHAIN` environment variable.
 
 - **Slow is not a failure.** Answers stream in live, and a model is dropped only when it errors, returns bad JSON,
   or sends **nothing at all** for 45 s.
 - **Busy models wait their turn.** A model that answers "503 busy" gets one retry after a few seconds; after that it is
-  tried last for 90 seconds, so the next requests go straight to a model that works.
+  tried last for 90 seconds.
 - **"Use quick version now"** skips the wait at any time.
-- The **offline engine** reorders your skills, bullets and projects for the job and trims to length. It never writes new
-  text, so it can't make anything up. It also kicks in automatically when the server can't be reached or the daily limit
-  is reached.
+- The **offline engine** reorders your skills, bullets and projects for the job. It never writes new text, so it can't
+  make anything up. It also kicks in when the server can't be reached or the daily limit is reached.
 - Usage limits fail **open**: if the database is down, people can still use the AI.
 
 ## Architecture
@@ -103,17 +104,19 @@ was blocked, rate-limited or took minutes. Change the order without code via the
 | Part | Tech | Where |
 | --- | --- | --- |
 | Web app | React 19 + TypeScript + Vite, plain CSS design tokens | `web/` → Vercel CDN |
-| Page + PDF | Own layout engine (Helvetica metrics), SVG on screen, `pdf-lib` for the PDF | `web/src/lib/page/` |
+| Uploaded PDF view | pdf.js on screen, clickable blocks, file storage (browser + account) | `web/src/lib/source.ts`, `web/src/components/PdfView.tsx` |
+| Template page + PDF | Own layout engine, SVG on screen, `pdf-lib` for the PDF | `web/src/lib/page/` |
 | API | FastAPI (stateless), streaming Server-Sent Events | `backend/`, entry `api/index.py` → Vercel Python function |
-| AI | Gemini (`google-genai`) → Groq (OpenAI-compatible HTTP), both free tiers | `backend/ai/` |
-| File reading | PyMuPDF (PDF) and python-docx (Word) read uploaded resumes; `backend/fileedit/` can also edit a file in place (API only) | `backend/fileedit/` |
+| PDF editing | PyMuPDF: read blocks, write changes in place, fit onto A4 / Letter | `backend/fileedit/` |
+| AI | Gemini (`google-genai`) and Groq (OpenAI-compatible HTTP), both free tiers | `backend/ai/` |
 | Accounts & data | Supabase Auth + Postgres with Row Level Security | `supabase/migrations/` |
 
-API endpoints: `POST /api/file/extract`, `POST /api/file/tailor` (stream), `POST /api/file/render`, `POST /api/tailor` (stream), `POST /api/parse` (stream), `POST /api/rewrite`, `GET /api/config`,
-`GET /api/health`, docs at `/api/docs`.
+API endpoints: `POST /api/file/extract`, `POST /api/file/render`, `POST /api/tailor` (stream), `POST /api/parse`
+(stream), `POST /api/rewrite`, `GET /api/config`, `GET /api/health`, docs at `/api/docs`.
 
 The browser talks to Supabase directly for the user's own data (RLS ensures people only see their own rows).
-The API only verifies who is calling (for daily limits) and runs AI. Name, email and phone are never sent to the AI.
+The API only verifies who is calling (for daily limits), runs AI and edits PDFs. Name, email and phone are never
+sent to the AI.
 
 ## Run it locally
 
@@ -135,9 +138,9 @@ Without Supabase settings, everyone is a guest (saved in the browser). Without A
 ## Tests
 
 ```bash
-pytest -q                               # API: fallback chain, stall handling, limits, endpoints
+pytest -q                               # API, AI fallback chain, limits, PDF editing and paper sizes
 ruff check backend api tests
-cd web && npm test && npm run typecheck # match engine, truth check, offline engine, import, undo
+cd web && npm test && npm run typecheck # PDF field linking, checks on AI rewrites, page engine, import, undo
 ```
 
 CI runs all of these on every push (`.github/workflows/ci.yml`).
@@ -145,11 +148,12 @@ CI runs all of these on every push (`.github/workflows/ci.yml`).
 ## Deploy
 
 Everything runs on **Vercel** (free Hobby plan) + **Supabase** (free plan). See [`DEPLOY_PROMPT.md`](DEPLOY_PROMPT.md)
-for a step-by-step guide, written so a local Claude session can do it for you.
+for a step-by-step guide. The database tables are in `supabase/migrations/` (run them in order in the Supabase SQL
+editor). `supabase/reset.sql` deletes every account and all data, for a fresh start.
 
 Environment variables are listed in [`.env.example`](.env.example).
 
 ## Your old resume
 
-The original `master_resume.json` is in `examples/legacy_master_resume.json`. Import it from
-**Settings → Import resume** (or the welcome screen) and it is converted to the new format automatically.
+The original `master_resume.json` is in `examples/legacy_master_resume.json`. Import it from the resume menu
+(**Import a resume…**) or the welcome screen and it is converted to the new format automatically.

@@ -13,10 +13,6 @@ MAX_RESUME_JSON_CHARS = 60_000
 
 
 class TailorOptions(BaseModel):
-    bullets_per_role: int = Field(3, ge=1, le=6)
-    bullets_per_project: int = Field(2, ge=1, le=4)
-    max_words_per_bullet: int = Field(30, ge=12, le=60)
-    one_page: bool = True
     tone: Literal["balanced", "technical", "leadership", "concise"] = "balanced"
     instructions: str = Field("", max_length=600)
 
@@ -25,6 +21,8 @@ class TailorRequest(BaseModel):
     resume: dict
     job_description: str = Field(min_length=30, max_length=MAX_JD_CHARS)
     options: TailorOptions = TailorOptions()
+    # Uploaded PDF: the characters each line may have ("summary" / "<item id>.<bullet index>" -> [min, max]).
+    limits: dict[str, tuple[int, int]] | None = Field(default=None, max_length=300)
 
     @field_validator("resume")
     @classmethod
@@ -61,17 +59,11 @@ class FileEdit(BaseModel):
     text: str = Field(max_length=2000)
 
 
-class FileTailorRequest(BaseModel):
-    file_type: Literal["pdf", "docx"]
-    file_base64: str = Field(min_length=10, max_length=MAX_FILE_B64_CHARS)
-    job_description: str = Field(min_length=30, max_length=MAX_JD_CHARS)
-    options: TailorOptions = TailorOptions()
-
-
 class FileRenderRequest(BaseModel):
-    file_type: Literal["pdf", "docx"]
     file_base64: str = Field(min_length=10, max_length=MAX_FILE_B64_CHARS)
-    edits: list[FileEdit] = Field(default_factory=list, max_length=200)
+    edits: list[FileEdit] = Field(default_factory=list, max_length=400)
+    paper: Literal["A4", "Letter"] | None = None  # put the pages on this paper (None = as uploaded)
+    fit: Literal["shrink", "pages"] = "shrink"  # scale each page onto one sheet, or keep size and add sheets
 
 
 # ---------------------------------------------------------------- AI outputs
@@ -119,18 +111,6 @@ class TailorOutput(BaseModel):
     keywords: list[Keyword]
     project_ideas: list[ProjectIdea]
     advice: list[str]
-
-
-class FileTailorOutput(BaseModel):
-    job: JobInfo
-    edits: list[FileEdit]
-    keywords: list[Keyword]
-    project_ideas: list[ProjectIdea]
-    advice: list[str]
-
-
-class FileFixOutput(BaseModel):
-    edits: list[FileEdit]
 
 
 class RewriteOutput(BaseModel):

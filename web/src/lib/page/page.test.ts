@@ -74,59 +74,5 @@ describe("page engine", () => {
     expect(pdfSafe("你好")).toBe("??");
   });
 
-  it("draws an uploaded resume in its own design (\"Your format\")", async () => {
-    const r = normalizeResume({
-      ...legacy,
-      layout: {
-        ...legacy.layout,
-        template: "custom",
-        page: "Letter",
-        titles: { experience: "Work History", skills: "Toolbox" },
-        custom: { family: "serif", headerAlign: "left", name: 22, body: 10.5, title: 12, accent: "#1f3a5f", rule: 0 },
-      },
-    });
-    const { print } = layoutResume(r);
-    const items = texts(print.pages[0]);
-    expect(print.width).toBe(612);
-    expect(items.every((t) => t.family === "serif")).toBe(true);
-    const words = items.map((t) => t.text).join(" ");
-    expect(words).toContain("Work History");
-    expect(words).toContain("Toolbox");
-    const name = items.find((t) => t.path === "basics.name")!;
-    expect(name.size).toBeCloseTo(22 * print.fontScale, 5); // may be scaled down a little to fit one page
-    expect(name.x).toBeLessThan(80); // left-aligned header
-    expect(items.find((t) => t.text === "Toolbox")!.color).toBe("#1f3a5f");
-    expect(print.pages[0].some((i) => i.kind === "rule")).toBe(false);
-    const doc = await PDFDocument.load(await buildPdf(print, { title: "t", author: "a" }));
-    expect(doc.getPageCount()).toBe(1);
-  });
 
-  it("follows the uploaded file's entry lines, header order and plain skills list", () => {
-    const base = normalizeResume(legacy);
-    const r = normalizeResume({
-      ...base,
-      skills: [{ category: "Clinical Skills", items: ["IV therapy", "Wound care"] }],
-      layout: {
-        ...base.layout,
-        template: "custom",
-        titles: { skills: "CLINICAL SKILLS" },
-        custom: {
-          badgeFirst: true,
-          datesBold: false,
-          entry: { line: "one", first: "a", join: " — " },
-          edu: { line: "one", first: "a", join: ", " },
-        },
-      },
-    });
-    const items = texts(layoutResume(r).print.pages[0]);
-    const y = (path: string) => items.find((t) => t.path === path)!.y;
-    const badge = items.find((t) => t.path === "basics.sub_badge" || t.path === "basics.headline")!;
-    const contact = items.find((t) => /^basics\.(contact_line|email|phone)$/.test(t.path ?? ""))!;
-    expect(badge.y).toBeLessThan(contact.y); // headline above the contact line
-    expect(y("experience.0.role")).toBe(y("experience.0.company")); // "Job title — Company" on one line
-    expect(items.some((t) => t.text === "—" && t.y === y("experience.0.role"))).toBe(true);
-    expect(items.find((t) => t.path === "experience.0.dates")!.font).toBe("regular");
-    expect(y("education.0.degree")).toBe(y("education.0.institution"));
-    expect(items.some((t) => t.path === "skills.0.category")).toBe(false); // no "Clinical Skills:" under CLINICAL SKILLS
-  });
 });
