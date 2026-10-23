@@ -149,6 +149,7 @@ export interface FileBlock {
   text: string; // without the bullet sign or "Label:" in front
   prefix: string;
   lines: number[][]; // [x0, y0, x1, y1] of each line, in PDF points from the top left
+  room?: [number, number]; // characters that fill the lines: at least (reaching the last line) and at most
 }
 
 export interface ExtractedFile {

@@ -34,7 +34,9 @@ PLAIN, HUMAN LANGUAGE (very important):
   wrote, trained, shipped, taught, worked with.
 - Keep real names exactly as written (tools, languages, frameworks, datasets, papers, metrics):
   recruiters and applicant tracking systems search for them.
-- Resume style: no "I", no "we". Bullets start with a verb.
+- Resume style: no "I", no "we". Bullets start with a verb. Vary the verbs: do not start every
+  bullet with the same word ("Built", "Built", "Built").
+- No long dashes (—) and no semicolon chains: use a comma or a new sentence, like a person writes.
 - Plain words does NOT mean spelling out symbols. Keep them exactly as written: "10+", "90%",
   "~63x", "#3160", "2.2x", "Policy-as-Prompt", "fit_update()", "C++", "CI/CD". Never write
   "10 plus", "90 percent" or "number 3160". Keep hyphens in words like "multi-user".
@@ -98,13 +100,15 @@ SAME SIZE, BETTER WORDS (strict):
 - ALIGN EVERY BULLET WITH THE JOB: for each bullet, find what in THAT job or project (its role,
   name, stack and the bullet itself) matches what the job asks for, put it first, and use the job's
   words for it where they truthfully apply. Drop parts the job does not care about to make room,
-  but keep every number. Only mention tools from that same job's or project's stack.
+  but keep every number. Only mention tools from that same job's or project's stack. The same goes
+  for the bullets of other_sections (research, volunteering, leadership...).
 - Tone: {TONES[options.tone]}
 {extra}
 WHAT TO RETURN (JSON only, matching the schema):
 - job: the job title and company name from the job description ("" if not stated).
 - summary, skills, experience (every experience id with its bullets), projects (every project id with
-  its stack and bullets). Use the exact ids.
+  its stack and bullets), other_sections (every item id of the other sections with its bullets, aligned
+  with the job the same way). Use the exact ids.
 - project_order: all project ids, most relevant to this job first.
 - keywords: the 10-20 most important hard skills, tools and qualifications in the job description,
   written as they appear in the job. importance = "must" for requirements, "nice" for nice-to-haves.
@@ -153,7 +157,13 @@ def compact_resume(resume: dict, limits: dict | None = None) -> str:
         "other_sections": [
             {
                 "title": s.get("title", ""),
-                "items": [{k: i.get(k) for k in ("title", "subtitle", "bullets")} for i in s.get("items", [])],
+                "items": [
+                    {
+                        **{k: i.get(k) for k in ("id", "title", "subtitle")},
+                        "bullets": _bullets(i.get("bullets"), str(i.get("id")), limits),
+                    }
+                    for i in s.get("items", [])
+                ],
             }
             for s in resume.get("custom_sections", [])
         ],
@@ -192,6 +202,7 @@ def rewrite_system() -> str:
 You rewrite single resume bullet points.
 {TRUTH_RULES}
 {PLAIN_LANGUAGE}
+{KEEP_MEANING}
 Return JSON: {{"options": [3 alternative rewrites]}}. Unless the goal is to make it shorter, each
 option must be about as long as the original (within 90%-110% of its characters). No ending period
 needed, no quotation marks around the text.

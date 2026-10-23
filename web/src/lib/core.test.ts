@@ -143,7 +143,7 @@ describe("tailoring", () => {
     const invented = "Cut AWS spend by 30% for 12 teams by moving batch jobs from EC2 to scheduled Airflow tasks on spot.";
     expect(acceptRewrite(old, invented, whole).ok).toBe(false);
     const longer = good + " This also made the nightly reports finish much faster for everyone on the data team.";
-    expect(acceptRewrite(old, longer, whole)).toMatchObject({ text: old, ok: false, reason: "longer than the original" });
+    expect(acceptRewrite(old, longer, whole)).toMatchObject({ text: old, ok: false, reason: "is longer than the original" });
   });
 });
 

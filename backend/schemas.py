@@ -107,6 +107,7 @@ class TailorOutput(BaseModel):
     skills: list[SkillGroup]
     experience: list[BulletsById]
     projects: list[ProjectTailoring]
+    other_sections: list[BulletsById] = []  # items of the other sections (research, volunteering...) by id
     project_order: list[str]
     keywords: list[Keyword]
     project_ideas: list[ProjectIdea]

@@ -182,3 +182,24 @@ def test_tailor_prompt_pins_the_number_of_skills_lines():
 
     resume = {"skills": [{"category": "Languages", "items": ["Go"]}, {"category": "Cloud", "items": ["AWS"]}]}
     assert "Return exactly 2 skills lines" in prompts.tailor_prompt(resume, "We need Go and AWS for our backend.")
+
+
+def test_tailor_prompt_sends_other_sections_with_ids_and_room():
+    from backend import prompts
+    from backend.schemas import TailorOptions, TailorOutput
+
+    resume = {
+        "custom_sections": [
+            {"title": "Volunteering", "items": [{"id": "ci1", "title": "Food bank", "bullets": ["Sorted 200 boxes."]}]}
+        ]
+    }
+    sent = json.loads(prompts.compact_resume(resume, {"ci1.0": (14, 40)}))
+    item = sent["other_sections"][0]["items"][0]
+    assert item["id"] == "ci1" and item["bullets"][0] == {
+        "text": "Sorted 200 boxes.",
+        "chars": 17,
+        "min": 14,
+        "max": 40,
+    }
+    assert "other_sections" in prompts.tailor_system(TailorOptions())
+    assert TailorOutput.model_validate(TAILOR_OK).other_sections == []  # an answer without them still works

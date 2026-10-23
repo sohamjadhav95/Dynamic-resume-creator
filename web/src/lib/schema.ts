@@ -309,6 +309,7 @@ function normalizeSource(raw: any): Source | undefined {
       lines: b.lines.filter((r: any) => Array.isArray(r) && r.length === 4).map((r: number[]) => r.map(Number)),
       ...(typeof b.path === "string" && b.path ? { path: b.path } : {}),
       ...(typeof b.sep === "string" ? { sep: b.sep } : {}),
+      ...(Array.isArray(b.room) && b.room.length === 2 ? { room: [Number(b.room[0]) || 0, Number(b.room[1]) || 0] as [number, number] } : {}),
     }));
   const edits: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw.edits ?? {})) if (typeof v === "string") edits[k] = v;

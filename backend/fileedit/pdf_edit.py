@@ -11,6 +11,7 @@ How it works:
 """
 
 import logging
+import math
 import re
 import statistics
 from collections import Counter
@@ -268,13 +269,27 @@ def build_groups(doc: pymupdf.Document) -> tuple[list[Group], float]:
         return [], 10.0
     body_size = Counter(round(c.size * 2) / 2 for ln in lines for c in ln.chars if c.c.strip()).most_common(1)[0][0]
 
+    # Bold lines (a long "Role | Company" title) may run past the text column; they don't set its edge.
+    regular = [ln for ln in lines if not main_style(ln.chars)[2]] or lines
+
     def column_right(page: int, left: float, indent: float) -> float:
-        candidates = [
-            ln.x1
-            for ln in lines
-            if ln.page == page and len(ln.text.strip()) > 25 and (abs(ln.x0 - left) < 20 or abs(ln.x0 - indent) < 20)
-        ]
-        return max(candidates) if candidates else max(ln.x1 for ln in lines if ln.page == page)
+        candidates = sorted(
+            (
+                ln.x1
+                for ln in regular
+                if ln.page == page
+                and len(ln.text.strip()) > 25
+                and (abs(ln.x0 - left) < 20 or abs(ln.x0 - indent) < 20)
+            ),
+            reverse=True,
+        )
+        if not candidates:
+            return max(ln.x1 for ln in lines if ln.page == page)
+        # The edge most lines reach: one line sticking out further (a wide headline) doesn't move it.
+        for i, x in enumerate(candidates[:-2]):
+            if x - candidates[i + 2] <= 6:
+                return x
+        return candidates[0]
 
     groups: list[Group] = []
     cur: Group | None = None
@@ -310,6 +325,12 @@ def build_groups(doc: pymupdf.Document) -> tuple[list[Group], float]:
         elif re.search(r"summary|profile|objective|about", section, re.I) and len(g.body.split()) >= 8:
             g.kind = "summary"
         g.section = section
+    # A 2-line block whose first line happens to end near the edge isn't justified when the file's other
+    # wrapped lines are ragged: decide from the whole file.
+    wrapped = [line.x1 >= g.right - 1.5 for g in groups if len(g.lines) >= 2 for line in g.lines[:-1]]
+    if wrapped and sum(wrapped) < 0.7 * len(wrapped):
+        for g in groups:
+            g.justified = False
     return groups, body_size
 
 
@@ -372,6 +393,7 @@ def extract(pdf_bytes: bytes) -> dict:
                     "text": g.body,
                     "prefix": clean(g.prefix),
                     "lines": [[round(v, 1) for v in (ln.x0, ln.y0, ln.x1, ln.y1)] for ln in g.lines],
+                    "room": _room(g, groups),
                 }
             )
         return {
@@ -611,6 +633,23 @@ def _draw(page: pymupdf.Page, plan: Plan) -> None:
             )
             x += width_of(w) + gap
     writer.write_text(page)
+
+
+def _room(g: Group, groups: list[Group]) -> list[int]:
+    """How many characters fill the block's lines: at least (reaching its last line) and at most."""
+    starts, used = [], 0.0
+    for i, line in enumerate(g.lines):
+        chars = [c for c in g.body_chars(i) if c.c.strip()]
+        start = chars[0].x0 if chars else line.x0
+        starts.append(start)
+        used += (max(c.x1 for c in chars) - start) if chars else 0
+    n = len(g.body)
+    per_char = used / max(n, 1) or 1
+    right = _right_limit(g, groups)
+    fits = [max(right - x, 0) / per_char for x in starts]
+    low = math.ceil(sum(fits[:-1]) + 0.15 * fits[-1])
+    high = math.floor(0.97 * sum(fits))
+    return [min(low, n), max(high, n)]
 
 
 def _right_limit(g: Group, groups: list[Group]) -> float:

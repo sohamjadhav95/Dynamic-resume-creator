@@ -171,6 +171,12 @@ export function keepMapped(tailored: Resume, master: Resume): Resume {
   if (!mapped.has("summary")) out.summary = master.summary;
   out.experience.forEach((e, i) => (e.bullets = e.bullets.map((b, k) => (mapped.has(`experience.${i}.bullets.${k}`) ? b : master.experience[i]?.bullets[k] ?? b))));
   out.projects.forEach((p, i) => (p.bullets = p.bullets.map((b, k) => (mapped.has(`projects.${i}.bullets.${k}`) ? b : master.projects[i]?.bullets[k] ?? b))));
+  out.custom_sections.forEach((s, i) =>
+    s.items.forEach((it, j) => {
+      const was = master.custom_sections[i]?.items[j]?.bullets ?? [];
+      it.bullets = it.bullets.map((b, k) => (mapped.has(`custom_sections.${i}.items.${j}.bullets.${k}`) ? b : was[k] ?? b));
+    }),
+  );
   out.skills = out.skills.map((g, i) => (mapped.has(`skills.${i}.items`) ? g : master.skills[i] ?? g));
   out.layout.source = src;
   return out;
@@ -304,6 +310,7 @@ export async function attachPdf(r: Resume, pdf: { b64: string; name: string; inf
 
 /** How many characters fill a block's lines: at least (reaching the last line) and at most. */
 export function room(b: SourceBlock): [number, number] {
+  if (b.room) return b.room; // measured by the server (files read before it did: estimated below)
   const widths = b.lines.map(([x0, , x1]) => x1 - x0);
   const perLine = (Math.max(...widths) * b.text.length) / Math.max(widths.reduce((a, w) => a + w, 0), 1);
   const n = b.lines.length;
@@ -312,15 +319,21 @@ export function room(b: SourceBlock): [number, number] {
   return [Math.min(min, b.text.length), Math.max(max, b.text.length)];
 }
 
-/** For the AI: the room of every summary and bullet the PDF shows ("summary" / "<item id>.<bullet>"). */
+/** The room of every summary, bullet and skills line the PDF shows ("summary" / "<item id>.<bullet>" / "skills.<i>"). */
 export function lineLimits(r: Resume): Record<string, [number, number]> {
   const out: Record<string, [number, number]> = {};
   for (const b of sourceOf(r)?.blocks ?? []) {
     const m = b.path?.match(/^(experience|projects)\.(\d+)\.bullets\.(\d+)$/);
+    const c = b.path?.match(/^custom_sections\.(\d+)\.items\.(\d+)\.bullets\.(\d+)$/);
+    const sk = b.path?.match(/^skills\.(\d+)\.items$/);
     if (b.path === "summary") out.summary = room(b);
+    else if (sk) out[`skills.${sk[1]}`] = room(b);
     else if (m) {
       const item = r[m[1] as "experience" | "projects"][Number(m[2])];
       if (item) out[`${item.id}.${m[3]}`] = room(b);
+    } else if (c) {
+      const item = r.custom_sections[Number(c[1])]?.items[Number(c[2])];
+      if (item) out[`${item.id}.${c[3]}`] = room(b);
     }
   }
   return out;

@@ -222,12 +222,13 @@ export function App() {
     let note = "";
     const quick = () => offlineTailor(master, jd);
     try {
-      const limits = master.layout.source ? { limits: lineLimits(master) } : {};
+      const room = master.layout.source ? lineLimits(master) : {};
+      const limits = master.layout.source ? { limits: room } : {};
       const final = await streamAi("/api/tailor", { resume: aiPayload(master), job_description: jd, options: opts, ...limits }, onEvent, ctrl.signal);
       if (final.type === "result") {
         setProgress((p) => p && { ...p, stage: "finishing" });
-        outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model, jd);
-        outcome = await retryRefused(outcome, master, jd, rewriteBullet);
+        outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model, jd, room);
+        outcome = await retryRefused(outcome, master, jd, rewriteBullet, room);
       } else {
         outcome = quick();
         note =
@@ -265,7 +266,7 @@ export function App() {
     let outcome = await fitToPdf(first, master, userId);
     const misfits = (outcome.insights.kept ?? []).slice(before);
     if (!misfits.length || outcome.insights.engine === "offline") return outcome;
-    const retried = await retryRefused({ ...outcome, insights: { ...outcome.insights, kept: misfits } }, master, jd, rewriteBullet);
+    const retried = await retryRefused({ ...outcome, insights: { ...outcome.insights, kept: misfits } }, master, jd, rewriteBullet, lineLimits(master));
     outcome = {
       resume: retried.resume,
       insights: { ...retried.insights, kept: [...(outcome.insights.kept ?? []).slice(0, before), ...(retried.insights.kept ?? [])] },

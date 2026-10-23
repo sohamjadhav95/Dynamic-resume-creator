@@ -3,6 +3,8 @@
 //   same bullets, about the same length, every number kept (see acceptRewrite).
 // - offlineTailor(): the no-AI engine. Reorders, never writes or removes text.
 
+import EVERYDAY_TEXT from "../data/common-words.txt?raw";
+import { CASE_SENSITIVE, SKILL_ENTRIES, SOFT_SKILLS } from "../data/skills";
 import { aliasesFor, containsTerm, extractKeywords, guessJob, type Keyword } from "./keywords";
 import { clone, resumeText, type Resume } from "./schema";
 
@@ -43,6 +45,7 @@ export interface AiTailorOutput {
   skills: { category: string; items: string[] }[];
   experience: { id: string; bullets: string[] }[];
   projects: { id: string; stack: string[]; bullets: string[] }[];
+  other_sections?: { id: string; bullets: string[] }[]; // items of the other sections, by item id
   project_order: string[];
   keywords: Keyword[];
   project_ideas: ProjectIdea[];
@@ -86,7 +89,33 @@ function orderBy<T>(list: T[], score: (item: T) => number): T[] {
 // ------------------------------------------------------------------ honesty + size checks
 
 const NUMBER = /\d+(?:[.,]\d+)*/g;
-const numbers = (text: string) => new Set((text.match(NUMBER) ?? []).map((n) => n.replace(/,/g, "")));
+const LETTER = /[A-Za-z]/;
+// A digit between letters ("B2B", "P2P", "W3C") is part of a name, not a number.
+const numbers = (text: string) =>
+  new Set(
+    [...text.matchAll(NUMBER)]
+      .filter((m) => !(LETTER.test(text[m.index - 1] ?? "") && LETTER.test(text[m.index + m[0].length] ?? "")))
+      .map((m) => m[0].replace(/,/g, "")),
+  );
+
+/** The longest a rewrite may be on the app's page: a short line may grow to the end of its last line
+ * (about 110 characters a line), a long one by 15%. */
+const maxLength = (old: number) => Math.max(old * 1.15 + 4, Math.min(old * 1.3, Math.ceil(old / 110) * 110));
+
+// Words that make a line read as AI-written. Refused unless the person's own resume already uses them
+// ("end-to-end" also when the job post does).
+const AI_WORDS =
+  /\b(leverag\w*|spearhead\w*|orchestrat\w*|synerg\w*|cutting-edge|state-of-the-art|robust\w*|seamless\w*|utili[sz]\w*|facilitat\w*|passionate\w*|dynamic|innovative|results-driven|best-in-class|world-class|holistic\w*|paradigm\w*|empower\w*|streamlin\w*|revolutioni[sz]\w*|meticulous\w*|adept|proficient\w*|delv\w*|foster\w*|pivotal|showcas\w*|transformative|harness\w*|bolster\w*|architected|end-to-end|game-chang\w*|unparalleled|groundbreaking)\b/gi;
+
+export function aiWords(next: string, mine: string): string[] {
+  const own = mine.toLowerCase();
+  const out: string[] = [];
+  for (const [w] of next.matchAll(AI_WORDS)) {
+    const key = w.toLowerCase();
+    if (!own.includes(key.slice(0, 6)) && !out.includes(key)) out.push(key);
+  }
+  return out;
+}
 
 /**
  * Tailoring replaces text, it never adds to it. A rewrite is accepted only when it keeps every
@@ -99,8 +128,11 @@ export function acceptRewrite(
   wholeResume: string,
   allowedNames?: string, // names (tools, places) the rewrite may use; default: the whole resume
   jd = "", // the job post: its words may not be put into a line unless the resume uses them too
+  room?: [number, number], // uploaded PDF: the characters this line's space holds
 ): { text: string; ok: boolean; reason?: string } {
-  const candidate = (next ?? "").trim().replace(/^[-•*]\s+/, "");
+  let candidate = (next ?? "").trim().replace(/^[-•*]\s+/, "");
+  // A long dash is a typical AI habit; the person's own resume decides whether it uses one.
+  if (!old.includes("—")) candidate = candidate.replace(/\s*—\s*/g, ", ");
   if (!old.trim() || !candidate || candidate === old.trim()) return { text: old, ok: true };
   const after = numbers(candidate);
   const dropped = [...numbers(old)].filter((n) => !after.has(n));
@@ -110,23 +142,81 @@ export function acceptRewrite(
   if (invented.length) return { text: old, ok: false, reason: `added ${invented.join(", ")}, which is not in your resume` };
   const lost = numberLabels(old).filter((w) => !wordsOf(candidate).has(w.toLowerCase()));
   if (lost.length) return { text: old, ok: false, reason: `dropped "${lost.join('", "')}" next to a number` };
-  if (candidate.length > old.length * 1.15 + 4) return { text: old, ok: false, reason: "longer than the original" };
-  if (candidate.length < old.length * 0.75) return { text: old, ok: false, reason: "much shorter than the original" };
-  const names = newNames(old, candidate, allowedNames ?? wholeResume);
-  if (names.length) return { text: old, ok: false, reason: `mentions ${names.join(", ")}, not shown here in your resume` };
-  const borrowed = jobOnlyWords(candidate, wholeResume, jd);
-  if (borrowed.length)
-    return { text: old, ok: false, reason: `uses "${borrowed.join('", "')}" from the job post, but your resume never mentions it` };
-  const padding = newWords(candidate, `${wholeResume} ${jd}`);
-  if (padding.length >= 3) return { text: old, ok: false, reason: `adds words found nowhere in your resume (${padding.join(", ")})` };
-  return { text: candidate, ok: true };
+  // Every other problem is listed (so a second try can fix them all), each read as "the AI's version ...".
+  const problems: string[] = [];
+  if (room && (candidate.length > room[1] + 2 || candidate.length < room[0] - 2))
+    problems.push(`doesn't fill its space on your PDF (it needs ${room[0]}-${room[1]} characters, it had ${candidate.length})`);
+  if (!room && candidate.length > maxLength(old.length)) problems.push("is longer than the original");
+  if (candidate.length < old.length * 0.65) problems.push("is much shorter than the original");
+  const allowed = allowedNames ?? wholeResume;
+  const implied = impliedNames(`${old} ${allowed}`);
+  const names = newNames(old, candidate, `${allowed} ${implied}`);
+  if (names.length) problems.push(`mentions ${names.join(", ")}, not shown here in your resume`);
+  const borrowed = jobOnlyWords(candidate, wholeResume, jd).filter((w) => !names.some((n) => n.toLowerCase() === w));
+  if (borrowed.length) problems.push(`uses "${borrowed.join('", "')}" from the job post, but your resume never mentions it`);
+  const kept = keyTerms(candidate);
+  const terms = keyTerms(old);
+  const gone = [...terms].filter(([k]) => !kept.has(k)).map(([, w]) => w);
+  if (terms.size >= 3 && gone.length * 2 > terms.size) problems.push(`drops what the line is about ("${gone.join('", "')}")`);
+  const padding = newWords(candidate, `${wholeResume} ${implied} ${jd}`);
+  if (padding.length) problems.push(`adds words found nowhere in your resume (${padding.join(", ")})`);
+  const fancy = aiWords(candidate, `${wholeResume} ${/end-to-end/i.test(jd) ? "end-to-end" : ""}`);
+  if (fancy.length) problems.push(`uses "${fancy.join('", "')}", which sounds AI-written`);
+  return problems.length ? { text: old, ok: false, reason: problems.join(" and ") } : { text: candidate, ok: true };
 }
 
-/** Longer words in a rewrite that appear neither in the resume nor in the job post: filler or new claims. */
+/** What a line is about: its names ("LLM", "Kafka") and specialist words ("multimodal", "inference"), by stem. */
+function keyTerms(text: string): Map<string, string> {
+  const out = new Map(newNames("", text, "").map((n) => [stem(n.toLowerCase()), n]));
+  for (const w of wordsOf(text)) {
+    if (w.length >= 5 && !/\d/.test(w) && !w.includes("-") && !w.includes("/") && !everyday(w) && !out.has(stem(w))) out.set(stem(w), w);
+  }
+  return out;
+}
+
+/** Uncommon words in a rewrite that appear neither in the resume nor in the job post: new claims. */
 function newWords(next: string, known: string): string[] {
   const seen = new Set([...wordsOf(known)].map(stem));
-  return [...wordsOf(next)].filter((w) => w.length >= 5 && !/\d/.test(w) && !w.includes("-") && !w.includes("/") && !COMMON.has(w) && !seen.has(stem(w)));
+  return [...wordsOf(next)].filter(
+    (w) => w.length >= 5 && !/\d/.test(w) && !w.includes("-") && !w.includes("/") && !everyday(w) && !seen.has(stem(w)),
+  );
 }
+
+// Tools that come with another tool: a bullet about FastAPI may say Python, one about React may say UI.
+const IMPLIES: [RegExp, string][] = [
+  [/\b(fastapi|flask|django|pandas|numpy|scikit-learn|pytorch|tensorflow|keras|jupyter|pyspark|matplotlib|airflow)\b/i, "Python"],
+  [/\b(react|vue|angular|node\.?js|express|next\.js|jquery|typescript)\b/i, "JavaScript JS"],
+  [/\b(spring boot|hibernate)\b/i, "Java"],
+  [/\b(rails)\b/i, "Ruby"],
+  [/\b(laravel)\b/i, "PHP"],
+  [/\b(fastapi|flask|django|express|endpoints?|spring boot)\b/i, "API APIs REST"],
+  [/\b(react|vue|angular|html|css|tailwind|figma)\b/i, "UI"],
+  [/\b(dbt|postgresql|postgres|mysql|sqlite|snowflake|bigquery|redshift)\b/i, "SQL"],
+  [/\b(ec2|s3|lambda|dynamodb|cloudwatch)\b/i, "AWS"],
+  [/\b(tableau|power bi|looker)\b/i, "BI"],
+  [/\b(pytorch|tensorflow|keras|scikit-learn)\b/i, "ML"],
+  [/\b(epic|cerner|meditech)\b/i, "EHR EMR"],
+];
+
+/** Names implied by the tools a text mentions. */
+export function impliedNames(text: string): string {
+  return IMPLIES.filter(([re]) => re.test(text))
+    .map(([, names]) => names)
+    .join(" ");
+}
+
+// Everyday English (wordfreq Zipf frequency 3.5 or more, 5+ letters, stored stemmed). Such a word in a
+// rewrite ("growth", "leaders", "streaming") claims nothing; a rare job-post word ("vasoactive") does.
+const EVERYDAY = new Set(EVERYDAY_TEXT.split(/\s+/).filter(Boolean));
+// Skill names from the dictionary ("agile", "kubernetes"): a claim even when they are everyday words.
+const SKILL_WORDS = new Set(
+  SKILL_ENTRIES.flatMap((line) => {
+    const [canonical, ...aliases] = line.split("|");
+    if (SOFT_SKILLS.has(canonical)) return [];
+    return [canonical, ...aliases].filter((a) => !/\s/.test(a) && !CASE_SENSITIVE.has(a)).map((a) => a.toLowerCase());
+  }),
+);
+const everyday = (w: string) => COMMON.has(w) || (EVERYDAY.has(stem(w)) && !SKILL_WORDS.has(w));
 
 // Words any resume and job post share; using them claims nothing new.
 const COMMON = new Set(
@@ -152,7 +242,7 @@ export function jobOnlyWords(next: string, resume: string, jd: string): string[]
   const job = new Set([...wordsOf(jd)].map(stem));
   const out: string[] = [];
   for (const w of wordsOf(next)) {
-    if (w.length < 5 || /\d/.test(w) || COMMON.has(w) || w.includes("-") || w.includes("/")) continue;
+    if (w.length < 5 || /\d/.test(w) || everyday(w) || w.includes("-") || w.includes("/")) continue;
     const s = stem(w);
     if (!mine.has(s) && job.has(s) && !out.includes(w)) out.push(w);
   }
@@ -202,7 +292,17 @@ export function newNames(old: string, next: string, allowed: string): string[] {
 
 const MAX_ADDED_SKILLS = 4;
 
-export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine, model?: string, jd = ""): {
+/** Uploaded PDF: the characters each line's space holds ("summary" / "<item id>.<bullet index>" -> [min, max]). */
+export type LineRoom = Record<string, [number, number]>;
+
+export function applyAiResult(
+  master: Resume,
+  ai: AiTailorOutput,
+  engine: Engine,
+  model?: string,
+  jd = "",
+  room: LineRoom = {},
+): {
   resume: Resume;
   insights: Insights;
 } {
@@ -210,22 +310,20 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
   const source = resumeText(master);
   const removed: string[] = [];
   const added: string[] = [];
-  let refused = 0;
   const kept: { old: string; suggested: string; reason: string }[] = [];
-  const take = (old: string, next: string | undefined, allowedNames?: string) => {
-    const r = acceptRewrite(old, next, source, allowedNames, jd);
+  const take = (old: string, next: string | undefined, key: string, allowedNames?: string) => {
+    const r = acceptRewrite(old, next, source, allowedNames, jd, room[key]);
     if (!r.ok) {
-      refused++;
       kept.push({ old, suggested: (next ?? "").trim(), reason: r.reason ?? "" });
     }
     return r.text;
   };
   // Same bullets, same order: bullet 1 replaces bullet 1. A missing rewrite keeps the original.
   // A bullet may only name tools from its own job or project (its title, stack and other bullets).
-  const rewriteAll = (olds: string[], news: string[] | undefined, own: string) =>
-    olds.map((o, i) => take(o, news?.[i], own + " " + olds.join(" ")));
+  const rewriteAll = (id: string, olds: string[], news: string[] | undefined, own: string) =>
+    olds.map((o, i) => take(o, news?.[i], `${id}.${i}`, own + " " + olds.join(" ")));
 
-  out.summary = take(master.summary, ai.summary);
+  out.summary = take(master.summary, ai.summary, "summary");
 
   // Skills: same number of lines. The job's keywords may replace less relevant skills and a line's
   // category may be renamed for the role (like the original app). Each line keeps about its length,
@@ -245,9 +343,10 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
         removed.push(x); // neither in the resume nor in the job post: made up
         return false;
       });
-      // Keep the line about as long as before: drop the least relevant skills (not in the job post)
-      // from the end first, so the job's keywords survive.
-      const budget = g.items.join(", ").length * 1.1 + 6;
+      // Keep the line about as long as before (on an uploaded PDF: within its lines' room): drop the
+      // least relevant skills (not in the job post) from the end first, so the job's keywords survive.
+      const fit = room[`skills.${gi}`];
+      const budget = fit ? fit[1] : g.items.join(", ").length * 1.1 + 6;
       const capped = accepted.slice(0, g.items.length + 2);
       while (capped.length > 1 && capped.join(", ").length > budget) {
         let drop = -1;
@@ -258,6 +357,11 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
           }
         }
         capped.splice(drop === -1 ? capped.length - 1 : drop, 1);
+      }
+      // On a PDF a line must still reach its last line: top it up with the person's own skills it dropped.
+      for (const x of fit ? g.items : []) {
+        if (capped.join(", ").length >= fit![0]) break;
+        if (!capped.some((y) => y.toLowerCase() === x.toLowerCase()) && [...capped, x].join(", ").length <= fit![1]) capped.push(x);
       }
       const category = match.category.trim();
       return capped.length >= Math.max(1, Math.ceil(g.items.length * 0.7))
@@ -276,7 +380,7 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
   const expById = new Map(ai.experience?.map((e) => [e.id, e]) ?? []);
   out.experience = out.experience.map((e) => ({
     ...e,
-    bullets: rewriteAll(e.bullets, expById.get(e.id)?.bullets, `${e.role} ${e.company}`),
+    bullets: rewriteAll(e.id, e.bullets, expById.get(e.id)?.bullets, `${e.role} ${e.company}`),
   }));
 
   const projById = new Map(ai.projects?.map((p) => [p.id, p]) ?? []);
@@ -287,10 +391,20 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
     const stack = t.stack.map((x) => x.trim()).filter((x) => p.stack.some((y) => y.toLowerCase() === x.toLowerCase()));
     return {
       ...p,
-      bullets: rewriteAll(p.bullets, t.bullets, `${p.name} ${p.stack.join(", ")}`),
+      bullets: rewriteAll(p.id, p.bullets, t.bullets, `${p.name} ${p.stack.join(", ")}`),
       stack: stack.length === p.stack.length ? stack : p.stack,
     };
   });
+  // Other sections (research, volunteering...): bullets rewritten like a job's, by item id.
+  const otherById = new Map(ai.other_sections?.map((o) => [o.id, o]) ?? []);
+  out.custom_sections = out.custom_sections.map((s) => ({
+    ...s,
+    items: s.items.map((it) => ({
+      ...it,
+      bullets: rewriteAll(it.id, it.bullets, otherById.get(it.id)?.bullets, `${s.title} ${it.title} ${it.subtitle}`),
+    })),
+  }));
+
   if (ai.project_order?.length) {
     const rank = new Map(ai.project_order.map((id, i) => [id, i]));
     out.projects = orderBy(out.projects, (p) => -(rank.get(p.id) ?? 999));
@@ -324,9 +438,11 @@ type Rewriter = (input: {
   job_description: string;
 }) => Promise<string[]>;
 
-/** Where a line lives, and which names it may use (bullets: only its own job or project). */
-function locate(r: Resume, line: string): { set: (t: string) => void; context: string; allowed: string } | null {
-  if (r.summary === line) return { set: (t) => (r.summary = t), context: "professional summary", allowed: resumeText(r) };
+type Where = { set: (t: string) => void; context: string; allowed: string; key: string };
+
+/** Where a line lives, and which names it may use (bullets: only its own job, project or item). */
+function locate(r: Resume, line: string): Where | null {
+  if (r.summary === line) return { set: (t) => (r.summary = t), context: "professional summary", allowed: resumeText(r), key: "summary" };
   for (const e of r.experience) {
     const i = e.bullets.indexOf(line);
     if (i >= 0)
@@ -334,6 +450,7 @@ function locate(r: Resume, line: string): { set: (t: string) => void; context: s
         set: (t) => (e.bullets[i] = t),
         context: `${e.role} at ${e.company}`,
         allowed: `${e.role} ${e.company} ${e.bullets.join(" ")}`,
+        key: `${e.id}.${i}`,
       };
   }
   for (const p of r.projects) {
@@ -343,7 +460,20 @@ function locate(r: Resume, line: string): { set: (t: string) => void; context: s
         set: (t) => (p.bullets[i] = t),
         context: `project ${p.name} (${p.stack.join(", ")})`,
         allowed: `${p.name} ${p.stack.join(" ")} ${p.bullets.join(" ")}`,
+        key: `${p.id}.${i}`,
       };
+  }
+  for (const s of r.custom_sections) {
+    for (const it of s.items) {
+      const i = it.bullets.indexOf(line);
+      if (i >= 0)
+        return {
+          set: (t) => (it.bullets[i] = t),
+          context: `${s.title}: ${it.title}`,
+          allowed: `${s.title} ${it.title} ${it.subtitle} ${it.bullets.join(" ")}`,
+          key: `${it.id}.${i}`,
+        };
+    }
   }
   return null;
 }
@@ -357,6 +487,7 @@ export async function retryRefused(
   master: Resume,
   jd: string,
   rewrite: Rewriter,
+  room: LineRoom = {},
 ): Promise<{ resume: Resume; insights: Insights }> {
   const kept = outcome.insights.kept ?? [];
   if (!kept.length) return outcome;
@@ -370,7 +501,7 @@ export async function retryRefused(
       try {
         const options = await rewrite({ text: k.old, mode: "retry", keyword: k.reason, context: where.context, job_description: jd });
         for (const option of options) {
-          const r = acceptRewrite(k.old, option, source, where.allowed, jd);
+          const r = acceptRewrite(k.old, option, source, where.allowed, jd, room[where.key]);
           if (r.ok && r.text !== k.old) {
             where.set(r.text);
             return;

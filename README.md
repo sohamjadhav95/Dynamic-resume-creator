@@ -11,19 +11,29 @@ photo, columns, colours and spacing stay exactly as they are; only the words you
 1. **Master resume.** Upload your resume as a PDF (or start from a template: paste text, a JSON export such as the old
    `master_resume.json`, the sample, or a blank page). It becomes your master profile; tailoring never changes it,
    every job gets its own version.
-2. **Rewrite.** The AI rewrites the summary and every bullet so the part each job or project shares with the job post
-   comes first, in plain words. Same number of bullets, about the same length.
+2. **Rewrite.** The AI rewrites the summary and every bullet (jobs, projects and other sections such as research or
+   volunteering) so the part each one shares with the job post comes first, in plain words. Same number of bullets,
+   about the same length.
 3. **Skills (ATS keywords).** The job's important tools are added to the skills lines and the least relevant ones
    removed (at most 4 new ones); categories may be renamed for the role. Added skills are listed under **Tips** so you
    can remove any you haven't used.
 4. **Checks, in code.** Every rewrite must keep all numbers, add no new ones, stay about the same length, and not name
-   tools or terms your resume doesn't show (bullets: only from that same job or project). Code also refuses a rewrite
-   that drops what a number measures ("0.9416 Dice score"), borrows a job-post word the resume never uses (a nurse's
-   "heparin drips" must not become "vasoactive drips") or pads a line with filler. A refused line gets one more AI try
-   with the reason; otherwise the original stays. Refused lines are listed under Tips.
-5. **Fits your PDF.** For an uploaded PDF the AI is told how many characters fill each line's space, and every rewrite
-   is written into the PDF and checked: one that would need an extra line, or leave an empty one, gets one more try
-   with the exact numbers, else the original line stays. Nothing else on the page ever moves.
+   tools or terms your resume doesn't show (bullets: only from that same job or project, plus what its tools imply:
+   FastAPI → Python, React → UI, Tableau → BI). Code also refuses a rewrite that:
+   - drops what a number measures ("0.9416 Dice score") or most of what the line is about;
+   - borrows a specialist word or skill name from the job post that the resume never uses (a nurse's "heparin drips"
+     must not become "vasoactive drips"). Everyday words ("growth", "leaders", "event-driven") are fine: a
+     word-frequency list (`web/src/data/common-words.txt`) tells them apart;
+   - adds an uncommon word found nowhere in the resume or the job post (filler or a new claim);
+   - sounds AI-written ("leveraged", "spearheaded", "seamless", "robust"…), unless the resume already uses the word.
+     A long dash (—) becomes a comma.
+
+   A refused line gets one more AI try, told every reason; otherwise the original stays. Refused lines are listed
+   under Tips.
+5. **Fits your PDF.** For an uploaded PDF the server measures how many characters fill each block's lines; the AI is
+   told, and the checks use it. Every rewrite is written into the PDF and checked: one that would need an extra line,
+   or leave an empty one, gets one more try with the exact numbers, else the original line stays. A skills line that
+   comes out short is topped up with the person's own skills. Nothing else on the page ever moves.
 6. **Edit and export.** Click any text on the page to change it; **PDF** downloads exactly the page you see.
 
 ## Your PDF, edited in place (`backend/fileedit/`, `web/src/lib/source.ts`)
@@ -142,6 +152,11 @@ pytest -q                               # API, AI fallback chain, limits, PDF ed
 ruff check backend api tests
 cd web && npm test && npm run typecheck # PDF field linking, checks on AI rewrites, page engine, import, undo
 ```
+
+`web/src/lib/tailoring.samples.test.ts` runs 15 resumes from different fields (engineer, nurse, marketer, accountant,
+teacher, sales, designer, a graduate with only projects…) against real-style job posts and AI answers
+(`web/src/lib/fixtures/samples.ts`): good rewrites must be used in every section, and the slips models make (a
+buzzword, a tool from the job post, a changed number, a different metric) must be refused.
 
 CI runs all of these on every push (`.github/workflows/ci.yml`).
 

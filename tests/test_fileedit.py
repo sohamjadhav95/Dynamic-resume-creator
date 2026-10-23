@@ -155,6 +155,102 @@ def test_word_bullet_signs_are_joined_to_their_line():
     assert len(joined) == 1 and pdf_edit.BULLET_RE.match(joined[0].text)
 
 
+def make_wide_header_pdf() -> bytes:
+    """A headline and a bold job title wider than the text column, a summary line that ends in a full
+    stop, a skills line that wraps, a short one-line bullet and a ragged 2-line bullet."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    helv, hebo = pymupdf.Font("helv"), pymupdf.Font("hebo")
+    headline = (
+        "Applied ML Engineer · Open source maintainer · Published research · Talks at 3 meetups each year · Mentor"
+    )
+    page.insert_text((50, 50), headline, fontname="helv", fontsize=10.5)
+    page.insert_text((50, 80), "SUMMARY", fontname="hebo", fontsize=11)
+    summary = (
+        "Engineer with 5 years of building data products in Python and SQL for retail, travel and healthcare teams. "
+        "Experienced in shipping models to production, writing clear docs and helping teammates grow."
+    )
+    y = 96.0
+    for line in _wrap(summary, helv, 10, 495):
+        page.insert_text((50, y), line, fontname="helv", fontsize=10)
+        y += 12
+    page.insert_text((50, y + 14), "SKILLS", fontname="hebo", fontsize=11)
+    y += 30
+    label = "Languages: "
+    lw = hebo.text_length(label, 10)
+    page.insert_text((50, y), label, fontname="hebo", fontsize=10)
+    items = "Python, SQL, Go, TypeScript, Bash, Scala, Rust, Java, Kotlin, Swift, Ruby, PHP, Julia, MATLAB, Haskell, "
+    items += "Elixir"
+    for line in _wrap(items, helv, 10, 495 - lw):
+        page.insert_text((50 + lw, y), line, fontname="helv", fontsize=10)
+        y += 12
+    title = "Senior Machine Learning Engineer | Northwind Retail Analytics Group | New York, NY | 2021 - Present"
+    title += " | Full time"
+    page.insert_text((50, y + 14), title, fontname="hebo", fontsize=10.5)
+    y += 30
+    page.insert_text((50, y), "•", fontname="helv", fontsize=10)
+    page.insert_text((60, y), "Cut model training time by 40%.", fontname="helv", fontsize=10)
+    y += 16
+    ragged = (
+        "Built a feature store used by 6 teams that serves features to 30 models in production every day, "
+        "with tests and drift alerts."
+    )
+    page.insert_text((50, y), "•", fontname="helv", fontsize=10)
+    for line in _wrap(ragged, helv, 10, 485):
+        page.insert_text((60, y), line, fontname="helv", fontsize=10)
+        y += 12
+    return doc.tobytes()
+
+
+def test_wide_lines_do_not_split_paragraphs_or_skills_lines():
+    info = fileedit.extract(make_wide_header_pdf())
+    summary = block(info, "Engineer with 5 years")
+    assert len(summary["lines"]) == 2 and summary["text"].endswith("teammates grow.")  # one paragraph
+    skills = block(info, "Python, SQL")
+    assert len(skills["lines"]) == 2 and skills["text"].endswith("Elixir")  # the wrapped line belongs to it
+    assert not any(b["text"].startswith("Experienced") for b in info["blocks"])
+
+
+def test_each_block_says_how_many_characters_fill_it():
+    info = fileedit.extract(make_wide_header_pdf())
+    short = block(info, "Cut model training")
+    low, high = short["room"]
+    assert low < len(short["text"]) and high > 2 * len(short["text"])  # a half-empty line has room to grow
+    two = block(info, "Built a feature store")
+    low, high = two["room"]
+    assert 105 < low <= len(two["text"]) <= high < 230
+
+
+def test_ragged_file_is_not_stretched_when_rewritten():
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    helv, y = pymupdf.Font("helv"), 60.0
+    reviews = "Led weekly reviews of 40 dashboards with sales leads and finance partners to agree on regional targets."
+    for bullet in (BULLET_1, reviews, BULLET_1[::-1].title(), BULLET_2 * 3):
+        page.insert_text((50, y), "•", fontname="helv", fontsize=10)
+        for line in _wrap(bullet, helv, 10, 485):
+            page.insert_text((60, y), line, fontname="helv", fontsize=10)
+            y += 12
+        y += 4
+    groups, _ = pdf_edit.build_groups(pymupdf.open(stream=doc.tobytes()))
+    assert len(groups) == 4 and not any(g.justified for g in groups)
+
+
+def test_justified_file_stays_justified():
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    for i in range(3):
+        page.insert_textbox(
+            pymupdf.Rect(50, 60 + i * 60, 545, 110 + i * 60),
+            (BULLET_1 + " ") * 2,
+            fontname="helv",
+            fontsize=10,
+            align=pymupdf.TEXT_ALIGN_JUSTIFY,
+        )
+    groups, _ = pdf_edit.build_groups(pymupdf.open(stream=doc.tobytes()))
+    assert all(g.justified for g in groups if len(g.lines) >= 2)
+
+
 def test_pages_can_be_put_on_a4_or_letter():
     letter = make_pdf(612, 792)
     a4, sheets = fileedit.fit_to_paper(letter, "A4")
