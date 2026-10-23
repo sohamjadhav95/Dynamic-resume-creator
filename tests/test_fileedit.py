@@ -310,3 +310,54 @@ def test_api_refuses_borrowed_skills_in_file_tailoring(client, monkeypatch):
     result = payload["data"]["results"][0]
     assert result["status"] == "changed_facts" and "Kubernetes" in result["note"]
     assert "Kubernetes" not in pdf_text(base64.b64decode(payload["data"]["file_base64"]))
+
+
+# ---------------------------------------------------------------- style detection
+
+
+def make_serif_pdf() -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page(width=612, height=792)  # US Letter
+    page.insert_text((60, 70), "Jane Rivera", fontname="tibo", fontsize=22)
+    page.insert_text((60, 88), "jane@example.com | (415) 555-0142", fontname="tiro", fontsize=9)
+    y = 120.0
+    for heading, lines in (("Summary", [BULLET_2]), ("Experience", [BULLET_1, BULLET_2])):
+        page.insert_text((60, y), heading, fontname="tibo", fontsize=12, color=(0.12, 0.23, 0.37))
+        y += 16
+        for text in lines:
+            page.insert_text((60, y), "•", fontname="tiro", fontsize=10.5)
+            page.insert_text((74, y), text[:80], fontname="tiro", fontsize=10.5)
+            y += 14
+        y += 8
+    return doc.tobytes()
+
+
+def test_style_detection_reads_any_resume_design():
+    from backend.fileedit.style import detect_style
+
+    sans = detect_style("pdf", make_pdf())
+    assert sans["family"] == "sans" and sans["page"] == "A4"
+    assert sans["headerAlign"] == "center" and sans["name"] == 18 and sans["body"] == 10 and sans["bullet"] == "•"
+    assert sans["titles"]["experience"] == "EXPERIENCE"
+
+    serif = detect_style("pdf", make_serif_pdf())
+    assert serif["family"] == "serif" and serif["page"] == "Letter"
+    assert serif["name"] == 22 and serif["title"] == 12
+    assert serif["accent"] != "#000000"  # navy headings
+    assert serif["titles"] == {"summary": "Summary", "experience": "Experience"}
+    assert 55 <= serif["margin"]["side"] <= 65
+
+    word = detect_style("docx", make_docx())
+    assert word["page"] in ("A4", "Letter") and word["family"] == "sans"
+
+
+def test_style_detection_never_fails():
+    from backend.fileedit.style import detect_style
+
+    assert detect_style("pdf", b"%PDF-1.4 broken") == {}
+
+
+def test_api_extract_returns_the_design(client):
+    res = client.post("/api/file/extract", json={"filename": "cv.pdf", "file_base64": b64(make_serif_pdf())})
+    assert res.status_code == 200
+    assert res.json()["style"]["family"] == "serif"

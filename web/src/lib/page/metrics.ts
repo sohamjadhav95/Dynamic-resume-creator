@@ -5,20 +5,36 @@
 import { StandardFontEmbedder, StandardFonts } from "pdf-lib";
 
 export type FontKey = "regular" | "bold" | "italic" | "boldItalic";
+/** sans = Helvetica (same widths as Arial); serif = Times (same widths as Times New Roman). */
+export type Family = "sans" | "serif";
 
-export const PDF_FONT: Record<FontKey, StandardFonts> = {
-  regular: StandardFonts.Helvetica,
-  bold: StandardFonts.HelveticaBold,
-  italic: StandardFonts.HelveticaOblique,
-  boldItalic: StandardFonts.HelveticaBoldOblique,
+export const PDF_FONT: Record<Family, Record<FontKey, StandardFonts>> = {
+  sans: {
+    regular: StandardFonts.Helvetica,
+    bold: StandardFonts.HelveticaBold,
+    italic: StandardFonts.HelveticaOblique,
+    boldItalic: StandardFonts.HelveticaBoldOblique,
+  },
+  serif: {
+    regular: StandardFonts.TimesRoman,
+    bold: StandardFonts.TimesRomanBold,
+    italic: StandardFonts.TimesRomanItalic,
+    boldItalic: StandardFonts.TimesRomanBoldItalic,
+  },
 };
 
-const embedders = new Map<FontKey, StandardFontEmbedder>();
-function embedder(font: FontKey): StandardFontEmbedder {
-  let e = embedders.get(font);
+export const SCREEN_FONT: Record<Family, string> = {
+  sans: "Helvetica, Arial, 'Liberation Sans', Arimo, sans-serif",
+  serif: "'Times New Roman', Times, 'Liberation Serif', Tinos, serif",
+};
+
+const embedders = new Map<string, StandardFontEmbedder>();
+function embedder(font: FontKey, family: Family = "sans"): StandardFontEmbedder {
+  const key = family + font;
+  let e = embedders.get(key);
   if (!e) {
-    e = StandardFontEmbedder.for(PDF_FONT[font] as unknown as Parameters<typeof StandardFontEmbedder.for>[0]);
-    embedders.set(font, e);
+    e = StandardFontEmbedder.for(PDF_FONT[family][font] as unknown as Parameters<typeof StandardFontEmbedder.for>[0]);
+    embedders.set(key, e);
   }
   return e;
 }
@@ -30,13 +46,13 @@ const charWidths = new Map<string, number>(); // width of one character at size 
  * but drawText does not apply kerning, so measuring with it would make words overlap the space
  * after them.
  */
-export function textWidth(text: string, font: FontKey, size: number): number {
+export function textWidth(text: string, font: FontKey, size: number, family: Family = "sans"): number {
   let total = 0;
   for (const ch of text) {
-    const key = font + ch;
+    const key = family + font + ch;
     let w = charWidths.get(key);
     if (w === undefined) {
-      w = embedder(font).widthOfTextAtSize(ch, 1000);
+      w = embedder(font, family).widthOfTextAtSize(ch, 1000);
       charWidths.set(key, w);
     }
     total += w;
@@ -68,6 +84,11 @@ const REPLACE: Record<string, string> = {
   "‣": "•",
   "⁃": "-",
   "": "•",
+  "ł": "l",
+  "Ł": "L",
+  "đ": "d",
+  "Đ": "D",
+  "ı": "i",
 };
 const okChar = new Map<string, boolean>();
 

@@ -2,7 +2,7 @@
 // Every word is drawn at the position the layout engine computed, so the PDF matches the screen.
 
 import { PDFDocument, rgb, type PDFFont } from "pdf-lib";
-import { PDF_FONT, type FontKey } from "./metrics";
+import { PDF_FONT, type Family, type FontKey } from "./metrics";
 import type { PageLayout } from "./layout";
 
 function color(hex: string) {
@@ -17,8 +17,12 @@ export async function buildPdf(layout: PageLayout, meta: { title: string; author
   doc.setAuthor(meta.author);
   doc.setCreator("Tailor");
   doc.setProducer("Tailor");
-  const fonts = {} as Record<FontKey, PDFFont>;
-  for (const key of Object.keys(PDF_FONT) as FontKey[]) fonts[key] = await doc.embedFont(PDF_FONT[key]);
+  const fonts = new Map<string, PDFFont>();
+  const font = async (family: Family, key: FontKey) => {
+    const id = family + key;
+    if (!fonts.has(id)) fonts.set(id, await doc.embedFont(PDF_FONT[family][key]));
+    return fonts.get(id)!;
+  };
 
   for (const items of layout.pages) {
     const page = doc.addPage([layout.width, layout.height]);
@@ -32,7 +36,13 @@ export async function buildPdf(layout: PageLayout, meta: { title: string; author
           color: color(item.color),
         });
       } else if (!item.placeholder) {
-        page.drawText(item.text, { x: item.x, y: H - item.y, size: item.size, font: fonts[item.font], color: color(item.color) });
+        page.drawText(item.text, {
+          x: item.x,
+          y: H - item.y,
+          size: item.size,
+          font: await font(item.family, item.font),
+          color: color(item.color),
+        });
       }
     }
   }

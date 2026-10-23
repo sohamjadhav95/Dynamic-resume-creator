@@ -5,7 +5,7 @@
 // step, then the text size (to 92% at most), and only then spills onto a second page.
 
 import { visibleResume, type Resume, type SectionKey, type TemplateId } from "../schema";
-import { pdfSafe, textWidth, type FontKey } from "./metrics";
+import { pdfSafe, textWidth, type Family, type FontKey } from "./metrics";
 
 export const PAGE_PT = { A4: { w: 595.28, h: 841.89 }, Letter: { w: 612, h: 792 } } as const;
 
@@ -15,6 +15,7 @@ export interface TextItem {
   y: number; // baseline, from the top of the page
   text: string;
   font: FontKey;
+  family: Family;
   size: number;
   color: string;
   width: number;
@@ -60,13 +61,17 @@ export interface PageLayout {
 
 // ------------------------------------------------------------------ styles (sizes in points)
 
-interface Style {
+export interface Style {
+  family: Family;
   margin: { top: number; bottom: number; side: number };
   headerAlign: "center" | "left";
   name: number;
   contact: number;
   badge: number;
+  badgeBold: boolean;
+  badgeItalic: boolean;
   title: number;
+  titleBold: boolean;
   titleUpper: boolean;
   longTitles: boolean;
   rule: number; // thickness of the line under section titles (0 = none)
@@ -78,20 +83,32 @@ interface Style {
   lineHeight: number;
   ink: string;
   nameInAccent: boolean;
-  gaps: { header: number; section: number; afterTitle: number; entry: number; bullet: number };
+  gaps: { header: number; section: number; afterTitle: number; entry: number; bullet: number; name: number; contact: number };
   bulletIndent: number;
   textIndent: number;
+  bullet: string;
 }
 
+/** What style detection (backend/fileedit/style.py) may set for "Your format". */
+export type StyleOverrides = Partial<Omit<Style, "margin" | "gaps">> & {
+  margin?: Partial<Style["margin"]>;
+  gaps?: Partial<Style["gaps"]>;
+  accent?: string;
+};
+
 // "original" reproduces the owner's PDF (Word export, Arial): measured from the file.
-const STYLES: Record<TemplateId, Style> = {
+const STYLES: Record<Exclude<TemplateId, "custom">, Style> = {
   original: {
+    family: "sans",
     margin: { top: 26.9, bottom: 24, side: 42.5 },
     headerAlign: "center",
     name: 17,
     contact: 7.6,
     badge: 9,
+    badgeBold: true,
+    badgeItalic: false,
     title: 9,
+    titleBold: true,
     titleUpper: true,
     longTitles: true,
     rule: 0.75,
@@ -103,17 +120,22 @@ const STYLES: Record<TemplateId, Style> = {
     lineHeight: 1.28,
     ink: "#000000",
     nameInAccent: false,
-    gaps: { header: 6.9, section: 5.8, afterTitle: 2.2, entry: 5.5, bullet: 2.4 },
+    gaps: { header: 6.9, section: 7.9, afterTitle: 2.2, entry: 5.5, bullet: 2.4, name: 1.3, contact: 2.9 },
     bulletIndent: 6,
     textIndent: 15,
+    bullet: "•",
   },
   classic: {
+    family: "sans",
     margin: { top: 34, bottom: 30, side: 40 },
     headerAlign: "center",
     name: 20,
     contact: 8.5,
     badge: 9.5,
+    badgeBold: true,
+    badgeItalic: false,
     title: 9.5,
+    titleBold: true,
     titleUpper: true,
     longTitles: false,
     rule: 0.5,
@@ -125,17 +147,22 @@ const STYLES: Record<TemplateId, Style> = {
     lineHeight: 1.3,
     ink: "#16150f",
     nameInAccent: false,
-    gaps: { header: 8, section: 10, afterTitle: 5, entry: 6, bullet: 2.4 },
+    gaps: { header: 8, section: 10, afterTitle: 5, entry: 6, bullet: 2.4, name: 2, contact: 2 },
     bulletIndent: 4,
     textIndent: 13,
+    bullet: "•",
   },
   modern: {
+    family: "sans",
     margin: { top: 34, bottom: 30, side: 40 },
     headerAlign: "left",
     name: 21,
     contact: 8.5,
     badge: 10,
+    badgeBold: true,
+    badgeItalic: false,
     title: 9.5,
+    titleBold: true,
     titleUpper: true,
     longTitles: false,
     rule: 0.6,
@@ -147,17 +174,22 @@ const STYLES: Record<TemplateId, Style> = {
     lineHeight: 1.3,
     ink: "#16150f",
     nameInAccent: true,
-    gaps: { header: 8, section: 10, afterTitle: 5, entry: 6, bullet: 2.4 },
+    gaps: { header: 8, section: 10, afterTitle: 5, entry: 6, bullet: 2.4, name: 2, contact: 2 },
     bulletIndent: 4,
     textIndent: 13,
+    bullet: "•",
   },
   compact: {
+    family: "sans",
     margin: { top: 26, bottom: 24, side: 32 },
     headerAlign: "left",
     name: 16,
     contact: 7.8,
     badge: 8.8,
+    badgeBold: true,
+    badgeItalic: false,
     title: 8.6,
+    titleBold: true,
     titleUpper: true,
     longTitles: false,
     rule: 0.75,
@@ -169,9 +201,10 @@ const STYLES: Record<TemplateId, Style> = {
     lineHeight: 1.25,
     ink: "#000000",
     nameInAccent: false,
-    gaps: { header: 5, section: 7.5, afterTitle: 4, entry: 4.5, bullet: 2 },
+    gaps: { header: 5, section: 7.5, afterTitle: 4, entry: 4.5, bullet: 2, name: 1.5, contact: 1.5 },
     bulletIndent: 4,
     textIndent: 12,
+    bullet: "•",
   },
 };
 
@@ -199,6 +232,7 @@ const HINT = "#a39e93";
 interface Run {
   text: string;
   font: FontKey;
+  family: Family;
   size: number;
   color: string;
   path?: string;
@@ -230,7 +264,12 @@ function words(runs: Run[]): Word[] {
     const text = pdfSafe(run.text);
     for (const w of text.split(/\s+/)) {
       if (!w) continue;
-      out.push({ text: w, run, width: textWidth(w, run.font, run.size), space: textWidth(" ", run.font, run.size) });
+      out.push({
+        text: w,
+        run,
+        width: textWidth(w, run.font, run.size, run.family),
+        space: textWidth(" ", run.font, run.size, run.family),
+      });
     }
   }
   return out;
@@ -242,12 +281,12 @@ function hardBreak(word: Word, avail: number): Word[] {
   let cur = "";
   for (const ch of word.text) {
     const next = cur + ch;
-    if (cur && textWidth(next, word.run.font, word.run.size) > avail) {
-      parts.push({ ...word, text: cur, width: textWidth(cur, word.run.font, word.run.size) });
+    if (cur && textWidth(next, word.run.font, word.run.size, word.run.family) > avail) {
+      parts.push({ ...word, text: cur, width: textWidth(cur, word.run.font, word.run.size, word.run.family) });
       cur = ch;
     } else cur = next;
   }
-  if (cur) parts.push({ ...word, text: cur, width: textWidth(cur, word.run.font, word.run.size) });
+  if (cur) parts.push({ ...word, text: cur, width: textWidth(cur, word.run.font, word.run.size, word.run.family) });
   return parts;
 }
 
@@ -316,9 +355,10 @@ class Builder {
 
   run(text: string, font: FontKey, size: number, path?: string, kind: FieldKind = "text", label = "", hint = ""): Run | null {
     if (path) this.fields[path] = { kind, label };
-    if (text.trim()) return { text, font, size: this.size(size), color: this.st.ink, path, kind, label };
+    const family = this.st.family;
+    if (text.trim()) return { text, font, family, size: this.size(size), color: this.st.ink, path, kind, label };
     if (this.placeholders && hint)
-      return { text: hint, font, size: this.size(size), color: HINT, path, kind, label, placeholder: true };
+      return { text: hint, font, family, size: this.size(size), color: HINT, path, kind, label, placeholder: true };
     return null;
   }
 
@@ -356,6 +396,7 @@ class Builder {
           y: baseline,
           text: w.text,
           font: w.run.font,
+          family: w.run.family,
           size: w.run.size,
           color: w.run.color,
           width: w.width,
@@ -379,7 +420,7 @@ class Builder {
   /** Left text that may wrap, with right-aligned text (dates) on its first line. */
   row(left: (Run | null)[], right: Run | null, keep = true) {
     const rightText = right ? pdfSafe(right.text) : "";
-    const rw = right ? textWidth(rightText, right.font, right.size) : 0;
+    const rw = right ? textWidth(rightText, right.font, right.size, right.family) : 0;
     const startBlock = this.blocks.length;
     const startY = this.y;
     const leftRuns = left.filter((r): r is Run => !!r);
@@ -401,6 +442,7 @@ class Builder {
         y: baseline,
         text: rightText,
         font: right.font,
+        family: right.family,
         size: right.size,
         color: right.color,
         width: rw,
@@ -415,7 +457,7 @@ class Builder {
     const st = this.st;
     this.gap(st.gaps.section);
     const label = st.titleUpper ? text.toUpperCase() : text;
-    const r = this.run(label, "bold", st.title, path, "text", "Section title", "SECTION");
+    const r = this.run(label, st.titleBold ? "bold" : "regular", st.title, path, "text", "Section title", "SECTION");
     if (r) r.color = this.accent;
     this.paragraph([r], { keep: true });
     const block = this.blocks[this.blocks.length - 1];
@@ -440,15 +482,17 @@ class Builder {
       const t = first?.items.find((it): it is TextItem => it.kind === "text");
       if (first && t) {
         const size = this.size(st.body);
+        const glyph = pdfSafe(st.bullet || "•");
         first.items.unshift({
           kind: "text",
           x: this.left + st.bulletIndent,
           y: t.y,
-          text: "•",
+          text: glyph,
           font: "regular",
+          family: st.family,
           size,
           color: st.ink,
-          width: textWidth("•", "regular", size),
+          width: textWidth(glyph, "regular", size, st.family),
         });
       }
     });
@@ -460,14 +504,19 @@ class Builder {
 function build(r: Resume, b: Builder) {
   const st = b.st;
   const v = visibleResume(r);
-  const titles = st.longTitles ? LONG_TITLES : SHORT_TITLES;
+  const defaults = st.longTitles ? LONG_TITLES : SHORT_TITLES;
+  const own = r.layout.titles ?? {};
+  const titles = new Proxy(defaults, {
+    get: (t, key: string) => (own as Record<string, string>)[key]?.trim() || t[key as keyof typeof t],
+  });
+  const title = (key: Exclude<SectionKey, "custom">) => b.title(titles[key], `layout.titles.${key}`);
   const align = st.headerAlign;
 
   // Header
   const name = b.run(v.basics.name, "bold", st.name, "basics.name", "text", "Name", "Your name");
   if (name && st.nameInAccent) name.color = b.accent;
   b.paragraph([name], { align });
-  b.gap(1.3);
+  b.gap(st.gaps.name);
   const contactRuns: (Run | null)[] = [];
   if (v.basics.contact_line) {
     contactRuns.push(b.run(v.basics.contact_line, "regular", st.contact, "basics.contact_line", "text", "Contact line"));
@@ -500,10 +549,11 @@ function build(r: Resume, b: Builder) {
     while (total() > b.width && cr[0].size > st.contact * 0.8) for (const x of cr) x.size *= 0.97;
     b.paragraph(cr, { align });
   }
-  b.gap(2.9);
+  b.gap(st.gaps.contact);
+  const badgeFont: FontKey = st.badgeBold ? (st.badgeItalic ? "boldItalic" : "bold") : st.badgeItalic ? "italic" : "regular";
   const badge = v.basics.sub_badge
-    ? b.run(v.basics.sub_badge, "bold", st.badge, "basics.sub_badge", "text", "Highlights line")
-    : b.run(v.basics.headline, "bold", st.badge, "basics.headline", "text", "Headline", "Headline, e.g. Data Analyst");
+    ? b.run(v.basics.sub_badge, badgeFont, st.badge, "basics.sub_badge", "text", "Highlights line")
+    : b.run(v.basics.headline, badgeFont, st.badge, "basics.headline", "text", "Headline", "Headline, e.g. Data Analyst");
   b.paragraph([badge], { align });
   b.gap(st.gaps.header - st.gaps.section);
 
@@ -511,23 +561,23 @@ function build(r: Resume, b: Builder) {
     summary: () => {
       const run = b.run(v.summary, "regular", st.body, "summary", "paragraph", "Summary", "A short summary of what you do best");
       if (!run) return;
-      b.title(titles.summary);
+      title("summary");
       b.paragraph([run], { align: "justify" });
     },
     skills: () => {
       if (!v.skills.length) return;
-      b.title(titles.skills);
-      v.skills.forEach((g) => {
+      title("skills");
+      v.skills.forEach((g, n) => {
         const i = r.skills.findIndex((x) => x.id === g.id);
+        if (n > 0) b.gap(st.gaps.bullet * 0.8);
         const cat = b.run(g.category ? `${g.category}:` : "", "bold", st.skills, `skills.${i}.category`, "text", "Skill group", "Group:");
         const items = b.run(g.items.join(", "), "regular", st.skills, `skills.${i}.items`, "list", "Skills", "Skill, skill, skill");
         b.paragraph([cat, items]);
-        b.gap(st.gaps.bullet * 0.8);
       });
     },
     experience: () => {
       if (!v.experience.length) return;
-      b.title(titles.experience);
+      title("experience");
       v.experience.forEach((e, n) => {
         const i = r.experience.findIndex((x) => x.id === e.id);
         if (n > 0) b.gap(st.gaps.entry);
@@ -548,7 +598,7 @@ function build(r: Resume, b: Builder) {
     },
     projects: () => {
       if (!v.projects.length) return;
-      b.title(titles.projects);
+      title("projects");
       v.projects.forEach((p, n) => {
         const i = r.projects.findIndex((x) => x.id === p.id);
         if (n > 0) b.gap(st.gaps.entry);
@@ -583,12 +633,12 @@ function build(r: Resume, b: Builder) {
     },
     certifications: () => {
       if (!v.certifications.length) return;
-      b.title(titles.certifications);
+      title("certifications");
       b.paragraph([b.run(v.certifications.join(" • "), "regular", st.body, "certifications", "list", "Certifications")]);
     },
     education: () => {
       if (!v.education.length) return;
-      b.title(titles.education);
+      title("education");
       v.education.forEach((e, n) => {
         const i = r.education.findIndex((x) => x.id === e.id);
         if (n > 0) b.gap(st.gaps.entry);
@@ -604,6 +654,57 @@ function build(r: Resume, b: Builder) {
 
   const hidden = new Set(r.layout.hidden);
   for (const key of r.layout.order) if (!hidden.has(key)) sections[key]();
+}
+
+/** The style for a resume: a preset, or "Your format" = measurements of the uploaded file. */
+export function styleFor(r: Resume): Style {
+  if (r.layout.template !== "custom" || !r.layout.custom) {
+    return STYLES[r.layout.template as Exclude<TemplateId, "custom">] ?? STYLES.original;
+  }
+  const c = r.layout.custom as StyleOverrides;
+  const base = STYLES.original;
+  const num = (v: unknown, d: number, lo: number, hi: number) =>
+    typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d;
+  const out: Style = {
+    ...base,
+    family: c.family === "serif" ? "serif" : "sans",
+    headerAlign: c.headerAlign === "left" ? "left" : "center",
+    name: num(c.name, base.name, 10, 40),
+    contact: num(c.contact, (c.body ?? base.body) * 0.9, 6, 13),
+    badge: num(c.badge, num(c.body, base.body, 7, 13) + 0.5, 6, 15),
+    badgeBold: c.badgeBold ?? base.badgeBold,
+    badgeItalic: c.badgeItalic ?? base.badgeItalic,
+    title: num(c.title, base.title, 7, 18),
+    titleBold: c.titleBold ?? true,
+    titleUpper: c.titleUpper ?? false,
+    longTitles: true,
+    rule: num(c.rule, 0, 0, 3),
+    body: num(c.body, base.body, 7, 13),
+    lineHeight: num(c.lineHeight, base.lineHeight, 1.08, 1.6),
+    ink: typeof c.ink === "string" && /^#[0-9a-f]{6}$/i.test(c.ink) ? c.ink : base.ink,
+    bulletIndent: num(c.bulletIndent, base.bulletIndent, 0, 30),
+    textIndent: num(c.textIndent, base.textIndent, 6, 40),
+    bullet: typeof c.bullet === "string" && c.bullet.length === 1 ? c.bullet : base.bullet,
+    margin: {
+      top: num(c.margin?.top, base.margin.top, 14, 90),
+      bottom: num(c.margin?.bottom, base.margin.bottom, 14, 72),
+      side: num(c.margin?.side, base.margin.side, 18, 90),
+    },
+    gaps: {
+      header: num(c.gaps?.header, base.gaps.header, 0, 30),
+      section: num(c.gaps?.section, base.gaps.section, 0, 24),
+      afterTitle: num(c.gaps?.afterTitle, base.gaps.afterTitle, 0, 14),
+      entry: num(c.gaps?.entry, base.gaps.entry, 0, 16),
+      bullet: num(c.gaps?.bullet, base.gaps.bullet, 0, 8),
+      name: num(c.gaps?.name, base.gaps.name, 0, 14),
+      contact: num(c.gaps?.contact, base.gaps.contact, 0, 14),
+    },
+  };
+  out.heading = num(c.heading, out.body + 0.5, 7, 15);
+  out.role = num(c.role, out.heading, 7, 15);
+  out.stack = num(c.stack, out.body * 0.94, 6.5, 13);
+  out.skills = num(c.skills, out.body, 7, 13);
+  return out;
 }
 
 // ------------------------------------------------------------------ pages and fitting
@@ -633,8 +734,15 @@ function paginate(b: Builder): { pages: Item[][]; fields: Record<string, Field>;
 
 function layoutOnce(r: Resume, s: number, f: number, placeholders: boolean) {
   const page = PAGE_PT[r.layout.page] ?? PAGE_PT.A4;
-  const style = STYLES[r.layout.template] ?? STYLES.original;
-  const accent = r.layout.template === "original" && r.layout.accent.toLowerCase() === "#1b1a17" ? style.ink : r.layout.accent;
+  const style = styleFor(r);
+  const accent =
+    r.layout.template === "custom" && r.layout.accent.toLowerCase() === "#1b1a17"
+      ? typeof r.layout.custom?.accent === "string" && /^#[0-9a-f]{6}$/i.test(r.layout.custom.accent)
+        ? r.layout.custom.accent
+        : style.ink
+      : r.layout.template === "original" && r.layout.accent.toLowerCase() === "#1b1a17"
+        ? style.ink
+        : r.layout.accent;
   const b = new Builder(page, style, s, f, accent, placeholders);
   build(r, b);
   const { pages, fields, height } = paginate(b);

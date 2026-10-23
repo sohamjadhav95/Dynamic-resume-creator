@@ -419,11 +419,11 @@ function DesignCard() {
     >
       <div className="stack">
         <div className="tpl-picker" role="group" aria-label="Template">
-          {TEMPLATES.map((t) => (
+          {(L.custom ? [{ id: "custom" as TemplateId, name: "Your format" }, ...TEMPLATES] : TEMPLATES).map((t) => (
             <button key={t.id} className="tpl-option" aria-pressed={L.template === t.id} onClick={() => set({ template: t.id })}>
               <span className={`tpl-thumb ${t.id}`} aria-hidden="true">
                 <i className="h" />
-                <i style={{ width: "80%", margin: t.id === "classic" || t.id === "original" ? "0 auto" : undefined }} />
+                <i style={{ width: "80%", margin: t.id === "classic" || t.id === "original" || t.id === "custom" ? "0 auto" : undefined }} />
                 <i className="s" />
                 <i />
                 <i style={{ width: "85%" }} />

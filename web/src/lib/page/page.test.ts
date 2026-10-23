@@ -70,4 +70,31 @@ describe("page engine", () => {
     expect(pdfSafe("Latency → 40ms, naïve ≥ 2x")).toBe("Latency -> 40ms, naïve >= 2x");
     expect(pdfSafe("你好")).toBe("??");
   });
+
+  it("draws an uploaded resume in its own design (\"Your format\")", async () => {
+    const r = normalizeResume({
+      ...legacy,
+      layout: {
+        ...legacy.layout,
+        template: "custom",
+        page: "Letter",
+        titles: { experience: "Work History", skills: "Toolbox" },
+        custom: { family: "serif", headerAlign: "left", name: 22, body: 10.5, title: 12, accent: "#1f3a5f", rule: 0 },
+      },
+    });
+    const { print } = layoutResume(r);
+    const items = texts(print.pages[0]);
+    expect(print.width).toBe(612);
+    expect(items.every((t) => t.family === "serif")).toBe(true);
+    const words = items.map((t) => t.text).join(" ");
+    expect(words).toContain("Work History");
+    expect(words).toContain("Toolbox");
+    const name = items.find((t) => t.path === "basics.name")!;
+    expect(name.size).toBeCloseTo(22 * print.fontScale, 5); // may be scaled down a little to fit one page
+    expect(name.x).toBeLessThan(80); // left-aligned header
+    expect(items.find((t) => t.text === "Toolbox")!.color).toBe("#1f3a5f");
+    expect(print.pages[0].some((i) => i.kind === "rule")).toBe(false);
+    const doc = await PDFDocument.load(await buildPdf(print, { title: "t", author: "a" }));
+    expect(doc.getPageCount()).toBe(1);
+  });
 });

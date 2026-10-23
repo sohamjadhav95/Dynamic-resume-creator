@@ -4,13 +4,13 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Field, PageLayout } from "../lib/page/layout";
+import { SCREEN_FONT } from "../lib/page/metrics";
 import { getPath, setPath, splitList, type Resume } from "../lib/schema";
 import { useSelection } from "../lib/selection";
 import { useStore } from "../lib/store";
 import { Icon } from "./Icon";
 
 const PX_PER_PT = 96 / 72;
-const FONT_FAMILY = "Helvetica, Arial, 'Liberation Sans', Arimo, sans-serif";
 
 export function PageView({ layout, zoom }: { layout: PageLayout; zoom: number }) {
   const { editing, setEditing } = useSelection();
@@ -41,7 +41,7 @@ export function PageView({ layout, zoom }: { layout: PageLayout; zoom: number })
                   x={it.x}
                   y={it.y}
                   fontSize={it.size}
-                  fontFamily={FONT_FAMILY}
+                  fontFamily={SCREEN_FONT[it.family]}
                   fontWeight={it.font.startsWith("bold") ? 700 : 400}
                   fontStyle={/talic/.test(it.font) ? "italic" : "normal"}
                   fill={it.color}

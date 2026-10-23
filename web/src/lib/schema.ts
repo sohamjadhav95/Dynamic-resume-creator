@@ -29,7 +29,7 @@ const DEFAULT_ORDER: SectionKey[] = [
   "education",
 ];
 
-export type TemplateId = "original" | "classic" | "modern" | "compact";
+export type TemplateId = "original" | "classic" | "modern" | "compact" | "custom";
 export type PageSize = "A4" | "Letter";
 
 export interface Basics {
@@ -90,6 +90,8 @@ export interface Layout {
   page: PageSize;
   density: number; // -3 (roomy) … 0 … +4 (tight)
   accent: string;
+  titles?: Partial<Record<SectionKey, string>>; // the resume's own section headings
+  custom?: Record<string, unknown>; // "Your format": the uploaded file's measured design (see page/layout.ts)
 }
 
 export interface Resume {
@@ -276,11 +278,18 @@ export function normalizeResume(input: unknown): Resume {
   base.layout = {
     order,
     hidden: strList(l.hidden),
-    template: ["original", "classic", "modern", "compact"].includes(l.template) ? l.template : "original",
+    template: ["original", "classic", "modern", "compact", "custom"].includes(l.template) ? l.template : "original",
     page: l.page === "Letter" ? "Letter" : "A4",
     density: Number.isFinite(l.density) ? Math.max(-3, Math.min(4, l.density)) : 0,
     accent: typeof l.accent === "string" && /^#[0-9a-f]{6}$/i.test(l.accent) ? l.accent : "#1B1A17",
   };
+  if (l.titles && typeof l.titles === "object") {
+    const titles: Partial<Record<SectionKey, string>> = {};
+    for (const key of DEFAULT_ORDER) if (typeof l.titles[key] === "string" && l.titles[key].trim()) titles[key] = str(l.titles[key]).slice(0, 60);
+    if (Object.keys(titles).length) base.layout.titles = titles;
+  }
+  if (l.custom && typeof l.custom === "object" && !Array.isArray(l.custom)) base.layout.custom = l.custom;
+  if (base.layout.template === "custom" && !base.layout.custom) base.layout.template = "original";
   return base;
 }
 

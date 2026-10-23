@@ -143,6 +143,7 @@ export interface ExtractedFile {
   file_type: "pdf" | "docx";
   pages: number;
   text: string;
+  style?: Record<string, unknown>; // the file's measured design (backend/fileedit/style.py)
 }
 
 async function postJson<T>(path: string, body: unknown, offlineMessage: string): Promise<T> {

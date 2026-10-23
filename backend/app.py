@@ -17,6 +17,7 @@ from .ai.router import Attempt, Event, collect, run_chain
 from .auth import Identity, get_identity
 from .config import Settings, get_settings
 from .fileedit.screen import screen_edits
+from .fileedit.style import detect_style
 from .limits import consume
 from .schemas import (
     FileFixOutput,
@@ -277,6 +278,7 @@ async def file_extract(req: FileUploadRequest):
         "text": extracted.text,
         "editable": len(extracted.segments),
         "font": extracted.font,
+        "style": await run_in_threadpool(detect_style, file_type, data),
     }
 
 

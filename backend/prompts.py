@@ -290,7 +290,12 @@ You convert raw resume text (copied from a PDF or Word file) into structured JSO
 - RESEARCH & PUBLICATIONS: Put Research, Publications, Open Source items into custom_sections
   (with title e.g. "Research & Open Source" or "Publications"). Do not convert them into standard projects.
 - Certifications, licenses, and achievements go in certifications.
-- Use "" or [] for anything missing. links = URLs or profile handles (LinkedIn, GitHub, site).
+- Any other section (Volunteer, Languages, Talks, Awards, Interests...) goes in custom_sections with its own heading
+  as the title. Keep every line; never drop a section.
+- Use "" or [] for anything missing. links = URLs or profile handles (LinkedIn, GitHub, site). Anything else on the
+  contact line (license number, visa status, portfolio) also goes in links, exactly as written.
+- location of a job, project or school: only when the text writes a place for that entry. Never copy the person's
+  own city into entries.
 - dates: keep the original text, e.g. "Jan 2022 - Present".
 Return JSON only.
 """

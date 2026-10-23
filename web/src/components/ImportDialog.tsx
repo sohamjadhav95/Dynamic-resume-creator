@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { streamAi } from "../lib/api";
-import { processResumeFile, heuristicParse, tryJson } from "../lib/importing";
+import { processResumeFile, heuristicParse, tryJson, withDetectedStyle } from "../lib/importing";
 import { normalizeResume, type Resume } from "../lib/schema";
 import { Icon } from "./Icon";
 import { Dialog, useToast } from "./ui";
@@ -23,9 +23,9 @@ export function ImportDialog({
   const abort = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const structure = async (raw: string) => {
+  const structure = async (raw: string, style?: Record<string, unknown>) => {
     setError("");
-    const finish = (r: Resume) => onDone(r);
+    const finish = (r: Resume) => onDone(withDetectedStyle(r, style));
     const json = tryJson(raw);
     if (json) {
       finish(json);
@@ -73,7 +73,7 @@ export function ImportDialog({
     try {
       const proc = await processResumeFile(file);
       setBusy(null);
-      await structure(proc.text);
+      await structure(proc.text, proc.style);
     } catch (e) {
       setBusy(null);
       setError((e as Error).message);

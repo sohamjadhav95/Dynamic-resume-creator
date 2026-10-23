@@ -10,14 +10,19 @@ const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
  * Gets the text out of an uploaded resume. PDF and Word files are read on the server (which keeps
  * lines, bullets and columns in order); if that fails, the browser reads them instead.
  */
-export async function processResumeFile(file: File): Promise<{ text: string }> {
+export interface ProcessedFile {
+  text: string;
+  style?: Record<string, unknown>; // measured design of an uploaded PDF / Word file
+}
+
+export async function processResumeFile(file: File): Promise<ProcessedFile> {
   const name = file.name.toLowerCase();
   if (name.endsWith(".doc")) throw new Error("Old .doc files can't be read. In Word, use Save As → .docx (or PDF) first.");
   const isDoc = name.endsWith(".pdf") || name.endsWith(".docx") || file.type === "application/pdf";
   if (isDoc && file.size <= MAX_UPLOAD_BYTES) {
     try {
       const info = await extractFile(file.name, await fileToBase64(file));
-      if (info.text.trim().length > 40) return { text: info.text };
+      if (info.text.trim().length > 40) return { text: info.text, style: info.style };
     } catch (err) {
       console.warn("Server could not read the file, reading it in the browser instead:", err);
     }
@@ -75,6 +80,25 @@ async function docxToText(file: File): Promise<string> {
   const mammoth = await import("mammoth");
   const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
   return result.value;
+}
+
+/**
+ * Draw an imported resume in the uploaded file's own design ("Your format"): its fonts, sizes,
+ * margins, heading style and heading words, as measured by the server.
+ */
+export function withDetectedStyle(r: Resume, style: Record<string, unknown> | undefined): Resume {
+  if (!style || Object.keys(style).length < 4) return r;
+  const { titles, page, ...custom } = style as { titles?: Record<string, string>; page?: string };
+  return normalizeResume({
+    ...r,
+    layout: {
+      ...r.layout,
+      template: "custom",
+      custom,
+      titles: titles ?? r.layout.titles,
+      page: page === "Letter" ? "Letter" : "A4",
+    },
+  });
 }
 
 /** If the text is our own JSON export (or the old app's), use it directly. */
