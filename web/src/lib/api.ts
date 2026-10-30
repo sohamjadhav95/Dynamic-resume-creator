@@ -118,10 +118,11 @@ function parseBlock(block: string): StreamEvent | null {
 
 export async function rewriteBullet(input: {
   text: string;
-  mode: "shorter" | "impact" | "keyword" | "fix" | "retry";
+  mode: "shorter" | "impact" | "keyword" | "fix" | "retry" | "project";
   keyword?: string;
   context?: string;
   job_description?: string;
+  previous?: string; // retry: the refused version, to fix rather than start over
 }): Promise<string[]> {
   let res: Response;
   try {

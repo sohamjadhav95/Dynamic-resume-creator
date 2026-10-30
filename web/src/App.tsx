@@ -32,7 +32,7 @@ import {
 import { fitToPdf, lineLimits, putFile, syncFiles } from "./lib/source";
 import { MASTER, useStore } from "./lib/store";
 import { signOut, watchSession } from "./lib/supabase";
-import { applyAiResult, offlineTailor, retryRefused, type Insights } from "./lib/tailor";
+import { applyAiResult, listChanges, offlineTailor, retryRefused, type Insights, type Limits } from "./lib/tailor";
 
 type Dialog = null | "auth" | "versions" | "settings" | "import-upload" | "import-paste";
 type Mode = { kind: "guest" } | { kind: "cloud"; userId: string } | { kind: "cloud-offline"; userId: string };
@@ -221,13 +221,13 @@ export function App() {
     let outcome: { resume: Resume; insights: Insights };
     let note = "";
     const quick = () => offlineTailor(master, jd);
+    const limits = master.layout.source ? lineLimits(master) : undefined;
     try {
-      const limits = master.layout.source ? { limits: lineLimits(master) } : {};
-      const final = await streamAi("/api/tailor", { resume: aiPayload(master), job_description: jd, options: opts, ...limits }, onEvent, ctrl.signal);
+      const final = await streamAi("/api/tailor", { resume: aiPayload(master), job_description: jd, options: opts, ...(limits && { limits }) }, onEvent, ctrl.signal);
       if (final.type === "result") {
         setProgress((p) => p && { ...p, stage: "finishing" });
-        outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model, jd);
-        outcome = await retryRefused(outcome, master, jd, rewriteBullet);
+        outcome = applyAiResult(master, final.data.data, final.data.engine, final.data.model, jd, limits);
+        outcome = await retryRefused(outcome, master, jd, rewriteBullet, limits);
       } else {
         outcome = quick();
         note =
@@ -250,7 +250,9 @@ export function App() {
     }
 
     try {
-      if (master.layout.source) outcome = await fitPdfWithRetry(outcome, master, jd);
+      if (master.layout.source) outcome = await fitPdfWithRetry(outcome, master, jd, limits);
+      // The quick engine only reorders: nothing to undo line by line.
+      if (outcome.insights.engine !== "offline") outcome.insights.changes = listChanges(master, outcome.resume);
       saveVersion(outcome, jd, note);
     } catch {
       toast({ message: "Something went wrong while saving this version. Please try again.", kind: "error" });
@@ -260,12 +262,12 @@ export function App() {
   }, [state.jobDraft, state.ws.master, state.options, version, progress, layout, toast, edit, dispatch, userId]);
 
   /** Uploaded PDF: rewrites must fit their old lines. Misfits get one more AI try, told how much to cut. */
-  const fitPdfWithRetry = async (first: { resume: Resume; insights: Insights }, master: Resume, jd: string) => {
+  const fitPdfWithRetry = async (first: { resume: Resume; insights: Insights }, master: Resume, jd: string, limits?: Limits) => {
     const before = first.insights.kept?.length ?? 0;
     let outcome = await fitToPdf(first, master, userId);
     const misfits = (outcome.insights.kept ?? []).slice(before);
     if (!misfits.length || outcome.insights.engine === "offline") return outcome;
-    const retried = await retryRefused({ ...outcome, insights: { ...outcome.insights, kept: misfits } }, master, jd, rewriteBullet);
+    const retried = await retryRefused({ ...outcome, insights: { ...outcome.insights, kept: misfits } }, master, jd, rewriteBullet, limits);
     outcome = {
       resume: retried.resume,
       insights: { ...retried.insights, kept: [...(outcome.insights.kept ?? []).slice(0, before), ...(retried.insights.kept ?? [])] },

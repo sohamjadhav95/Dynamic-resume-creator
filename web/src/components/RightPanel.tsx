@@ -6,7 +6,9 @@ import { highlight, type KeywordMatch } from "../lib/keywords";
 import { useMatch } from "../lib/match";
 import { clone, getPath, setPath, uid } from "../lib/schema";
 import { useSelection } from "../lib/selection";
+import { bulletRoom, replaceProject } from "../lib/source";
 import { MASTER, useStore } from "../lib/store";
+import type { ProjectIdea } from "../lib/tailor";
 import { HowItWorks } from "./HowItWorks";
 import { Icon } from "./Icon";
 import { Dialog, Panel, useToast } from "./ui";
@@ -36,12 +38,13 @@ export function RightPanel({
     <div className="stack" style={{ padding: 18, gap: 16 }}>
       {progress && <ProgressCard progress={progress} onQuick={onQuick} onCancel={onCancel} />}
       <MatchCard match={match} jd={jd} />
-      <RewriteCard jd={jd} missing={match?.matches.filter((m) => !m.found).map((m) => m.term) ?? []} />
+      <RewriteCard jd={jd} missing={match?.matches.filter((m) => !m.found || m.shown === false).map((m) => m.term) ?? []} />
       {version &&
         (version.insights.advice.length > 0 ||
           version.insights.removed.length > 0 ||
           (version.insights.added?.length ?? 0) > 0 ||
-          (version.insights.kept?.length ?? 0) > 0) && <AdviceCard />}
+          (version.insights.changes?.length ?? 0) > 0 ||
+          (version.insights.kept ?? []).some((k) => k.at)) && <AdviceCard />}
       {version && version.insights.project_ideas.length > 0 && <IdeasCard />}
       <HowItWorks defaultOpen={state.activeId === MASTER && !version && !jd.trim()} />
       {state.activeId === MASTER && !jd.trim() && !progress && (
@@ -157,6 +160,8 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
   const hard = match.matches.filter((m) => !m.soft);
   const missing = hard.filter((m) => !m.found);
   const found = hard.filter((m) => m.found);
+  const shown = found.filter((m) => m.shown !== false);
+  const listed = found.filter((m) => m.shown === false);
   const soft = match.matches.filter((m) => m.soft);
   const verdict =
     match.score >= 80 ? "Strong match" : match.score >= 60 ? "Good match" : match.score >= 40 ? "Partial match" : "Weak match";
@@ -212,7 +217,15 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
                 Up from {match.base}% <span className="delta">+{match.score - match.base}</span> ·{" "}
               </>
             ) : null}
-            {found.length} of {hard.length} key skills found
+            {found.length} of {hard.length} key skills found, {shown.length} shown in your work
+          </p>
+          <p className="score-parts">
+            {match.sections.map((s, i) => (
+              <span key={s.name}>
+                {i > 0 && " · "}
+                {s.name} <strong>{s.found}</strong>
+              </span>
+            ))}
           </p>
           <button className="btn btn-ghost btn-sm" style={{ marginLeft: -10, marginTop: 4 }} onClick={() => setShowJd(true)}>
             View job post with highlights
@@ -284,16 +297,31 @@ function MatchCard({ match, jd }: { match: ReturnType<typeof useMatch>; jd: stri
           )}
         </div>
       )}
-      {found.length > 0 && (
+      {shown.length > 0 && (
         <div className="kw-group">
-          <h4>Found in your resume</h4>
+          <h4>Shown in your summary, jobs or projects</h4>
           <div className="kw-list">
-            {found.map((m) => (
+            {shown.map((m) => (
               <span key={m.term} className="chip found">
                 <Icon name="check" size={12} /> {m.term}
               </span>
             ))}
           </div>
+        </div>
+      )}
+      {listed.length > 0 && (
+        <div className="kw-group">
+          <h4>Only in your skills list — counts half</h4>
+          <div className="kw-list">
+            {listed.map((m) => (
+              <span key={m.term} className="chip found listed" title="Show it in a bullet or your summary to count fully">
+                {m.term}
+              </span>
+            ))}
+          </div>
+          <p className="hint" style={{ margin: "8px 0 0" }}>
+            If you have used one, click a bullet on the page and add it with “Improve a bullet”.
+          </p>
         </div>
       )}
       {soft.length > 0 && (
@@ -427,18 +455,73 @@ function RewriteCard({ jd, missing }: { jd: string; missing: string[] }) {
 // ------------------------------------------------------------------ ideas & advice
 
 function IdeasCard() {
-  const { version } = useStore();
+  const { version, resume, edit, dispatch } = useStore();
+  const toast = useToast();
+  const [target, setTarget] = useState<Record<string, string>>({}); // idea title -> id of the project it replaces
+  const [busy, setBusy] = useState<string | null>(null);
   if (!version) return null;
+
+  const replace = async (idea: ProjectIdea) => {
+    const index = resume.projects.findIndex((p) => p.id === target[idea.title]);
+    if (index < 0) return;
+    const old = resume.projects[index];
+    const [min, max] = bulletRoom(resume, index);
+    setBusy(idea.title);
+    let bullet = idea.pitch;
+    try {
+      // The idea's sentence, written as a resume bullet that fits the old bullet's room.
+      const options = await rewriteBullet({
+        text: idea.pitch,
+        mode: "project",
+        keyword: `Make it ${min}-${max} characters.`,
+        context: `${idea.title} (${idea.stack.join(", ")})`,
+        job_description: version.job_description,
+      });
+      const off = (o: string) => Math.max(0, min - o.length, o.length - max);
+      bullet = [...options].sort((a, b) => off(a) - off(b))[0] ?? bullet;
+    } catch {
+      /* AI busy: use the idea's own sentence */
+    }
+    edit(replaceProject(resume, index, { title: idea.title, stack: idea.stack, bullet }));
+    setBusy(null);
+    setTarget((t) => ({ ...t, [idea.title]: "" }));
+    toast({
+      message: `“${old.name.split(/:\s/)[0]}” is now “${idea.title}”. Check its dates and wording on the page.`,
+      action: { label: "Undo", run: () => dispatch({ type: "undo" }) },
+    });
+  };
+
   return (
     <Panel id="ideas" icon="bulb" title="Project ideas for this job" defaultOpen={false}>
       <p className="hint" style={{ margin: 0 }}>
-        Not added to your resume. Build one to close a gap, then add it for real.
+        Ideas to close gaps for this job. Built one? Put it in place of a project that fits this job less. Only add what
+        you have really built: a recruiter will ask about it.
       </p>
       {version.insights.project_ideas.map((idea) => (
         <div key={idea.title} className="idea">
           <h4>{idea.title}</h4>
           <p>{idea.pitch}</p>
           <div className="stack-line">{idea.stack.join(" · ")}</div>
+          {resume.projects.length > 0 && (
+            <div className="row" style={{ marginTop: 10 }}>
+              <select
+                className="select grow"
+                value={target[idea.title] ?? ""}
+                onChange={(e) => setTarget((t) => ({ ...t, [idea.title]: e.target.value }))}
+                aria-label={`Project to replace with ${idea.title}`}
+              >
+                <option value="">Replace a project with this…</option>
+                {resume.projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name || "Untitled project"}
+                  </option>
+                ))}
+              </select>
+              <button className="btn btn-sm" disabled={!target[idea.title] || !!busy} onClick={() => replace(idea)}>
+                {busy === idea.title ? "Writing…" : "Replace"}
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </Panel>
@@ -450,10 +533,18 @@ function AdviceCard() {
   if (!version) return null;
   const { advice, removed } = version.insights;
   const added = version.insights.added ?? [];
-  const kept = version.insights.kept ?? [];
+  const kept = (version.insights.kept ?? []).filter((k) => k.at && !k.at.startsWith("skills:") && k.suggested && k.suggested !== k.old);
+  const changed = version.insights.changes?.length ?? 0;
   return (
     <Panel id="tips" icon="info" title="Tips">
       <ul className="advice">
+        {(changed > 0 || kept.length > 0) && (
+          <li>
+            <strong>What changed:</strong> {changed} line{changed === 1 ? "" : "s"} rewritten for this job
+            {kept.length > 0 && `, ${kept.length} more suggested`}. See each one, word by word, in “What changed for this
+            job” in the Build panel, and undo any of them there.
+          </li>
+        )}
         {added.length > 0 && (
           <li>
             <strong>Skills added from the job post:</strong> {added.join(", ")}. Keep them only if you have really
@@ -470,20 +561,6 @@ function AdviceCard() {
           </li>
         )}
       </ul>
-      {kept.length > 0 && (
-        <details className="kept">
-          <summary>
-            {kept.length} line{kept.length === 1 ? " was" : "s were"} kept as {kept.length === 1 ? "it was" : "they were"}
-          </summary>
-          <ul className="advice">
-            {kept.map((k) => (
-              <li key={k.old}>
-                <span className="hint">The AI's version {k.reason}:</span> {k.suggested}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
     </Panel>
   );
 }

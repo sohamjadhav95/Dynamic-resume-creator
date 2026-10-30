@@ -4,7 +4,7 @@
 // - offlineTailor(): the no-AI engine. Reorders, never writes or removes text.
 
 import { aliasesFor, containsTerm, extractKeywords, guessJob, type Keyword } from "./keywords";
-import { clone, resumeText, type Resume } from "./schema";
+import { clone, getPath, resumeText, setPath, type Resume } from "./schema";
 
 export type Engine = "gemini" | "groq" | "offline";
 
@@ -21,10 +21,31 @@ export interface Insights {
   advice: string[];
   removed: string[]; // skills the AI made up (not in the resume, not in the job post): dropped
   added?: string[]; // skills taken from the job post: shown so the person can remove any they haven't used
-  kept?: { old: string; suggested: string; reason: string }[]; // AI rewrites refused by the checks
+  kept?: Kept[]; // AI rewrites refused by the checks
+  changes?: Change[]; // every line tailoring changed, so each can be undone on its own
   engine: Engine;
   model?: string;
 }
+
+/** An AI rewrite the checks refused: the line kept its old text. `at` is where it lives (see spotPath). */
+export interface Kept {
+  old: string;
+  suggested: string;
+  reason: string;
+  at?: string;
+}
+
+/** A tailored line: a summary or bullet (text), or a skills line (its label and items). */
+export type LineValue = string | { category: string; items: string[] };
+
+export interface Change {
+  at: string;
+  before: LineValue;
+  after: LineValue;
+}
+
+/** Characters a line may have on an uploaded PDF ("summary" / "<item id>.<bullet>" -> [min, max]). */
+export type Limits = Record<string, [number, number]>;
 
 export interface TailorOptions {
   tone: "balanced" | "technical" | "leadership" | "concise";
@@ -91,7 +112,7 @@ const numbers = (text: string) => new Set((text.match(NUMBER) ?? []).map((n) => 
 /**
  * Tailoring replaces text, it never adds to it. A rewrite is accepted only when it keeps every
  * number of the original, adds no number that isn't somewhere in the resume, and stays about the
- * same length. Otherwise the original line is kept.
+ * same length (on an uploaded PDF: fills the lines the old text used). Otherwise the original line is kept.
  */
 export function acceptRewrite(
   old: string,
@@ -99,7 +120,12 @@ export function acceptRewrite(
   wholeResume: string,
   allowedNames?: string, // names (tools, places) the rewrite may use; default: the whole resume
   jd = "", // the job post: its words may not be put into a line unless the resume uses them too
+  fit: {
+    room?: [number, number]; // uploaded PDF: the characters its lines hold
+    shown?: string; // where a name the rewrite drops is still shown (its job's title, its project's tools)
+  } = {},
 ): { text: string; ok: boolean; reason?: string } {
+  const { room } = fit;
   const candidate = (next ?? "").trim().replace(/^[-•*]\s+/, "");
   if (!old.trim() || !candidate || candidate === old.trim()) return { text: old, ok: true };
   const after = numbers(candidate);
@@ -110,8 +136,17 @@ export function acceptRewrite(
   if (invented.length) return { text: old, ok: false, reason: `added ${invented.join(", ")}, which is not in your resume` };
   const lost = numberLabels(old).filter((w) => !wordsOf(candidate).has(w.toLowerCase()));
   if (lost.length) return { text: old, ok: false, reason: `dropped "${lost.join('", "')}" next to a number` };
-  if (candidate.length > old.length * 1.15 + 4) return { text: old, ok: false, reason: "longer than the original" };
-  if (candidate.length < old.length * 0.75) return { text: old, ok: false, reason: "much shorter than the original" };
+  // Tailoring must not make a line vaguer: the names that say what it is about stay ("CAC", "U-Net").
+  const vaguer = newNames(candidate, old, fit.shown ?? wholeResume);
+  if (vaguer.length) return { text: old, ok: false, reason: `dropped ${vaguer.join(", ")}, which says what the line is about` };
+  if (room) {
+    // The room is an estimate; the real page checks the fit afterwards (fitToPdf), so allow a little slack.
+    if (candidate.length > room[1] * 1.03) return { text: old, ok: false, reason: `was too long for its lines on your PDF (${room[0]}-${room[1]} characters)` };
+    if (candidate.length < room[0] * 0.95) return { text: old, ok: false, reason: `was too short to fill its lines on your PDF (${room[0]}-${room[1]} characters)` };
+  } else {
+    if (candidate.length > old.length * 1.15 + 4) return { text: old, ok: false, reason: "longer than the original" };
+    if (candidate.length < old.length * 0.75) return { text: old, ok: false, reason: "much shorter than the original" };
+  }
   const names = newNames(old, candidate, allowedNames ?? wholeResume);
   if (names.length) return { text: old, ok: false, reason: `mentions ${names.join(", ")}, not shown here in your resume` };
   const borrowed = jobOnlyWords(candidate, wholeResume, jd);
@@ -142,6 +177,24 @@ const COMMON = new Set(
 );
 const stem = (w: string) => w.replace(/(ations|ation|ating|ated|ates|ate|ments|ment|ings|ing|edly|ers|ed|er|es|ly|e)$|(?<!s)s$/, "");
 
+// Words about how work was done or how good it is, in any field: describing a line's own work with the
+// job's version of them claims nothing new. Words naming what the work was about ("construction",
+// "spatial", "vasoactive") are not here, so a line can't borrow the job's field.
+const GENERIC = new Set(
+  (
+    "accuracy accurate reliability reliable robustness robust scalability scalable efficiency efficient " +
+    "performance quality speed production deployment deployable deploy applied practical understanding document " +
+    "evaluation evaluate validation validate benchmarking benchmark measurement measure testing analysis analyze " +
+    "analytical insights implementation implement optimization optimize requirements documentation stakeholders " +
+    "solutions models systems workflows frameworks methods techniques approach custom training inference " +
+    "datasets pipelines tooling outcomes impact decisions problems solving " +
+    // halves of "production-grade", "real-world", "large-scale", "hands-on", "systems-level"
+    "grade world large scale hands level"
+  )
+    .split(" ")
+    .map(stem),
+);
+
 /**
  * Words in a rewrite that come from the job post and appear nowhere in the resume ("vasoactive",
  * "blameless"): the AI borrowing the job's words for work the person never described.
@@ -154,9 +207,15 @@ export function jobOnlyWords(next: string, resume: string, jd: string): string[]
   for (const w of wordsOf(next)) {
     if (w.length < 5 || /\d/.test(w) || COMMON.has(w) || w.includes("-") || w.includes("/")) continue;
     const s = stem(w);
-    if (!mine.has(s) && job.has(s) && !out.includes(w)) out.push(w);
+    if (!mine.has(s) && job.has(s) && !GENERIC.has(s) && !out.includes(w)) out.push(w);
   }
   return out;
+}
+
+/** How much of the job post's wording a line uses (distinct words), to pick the best-fitting rewrite. */
+function jobFit(text: string, jd: string): number {
+  const job = new Set([...wordsOf(jd)].filter((w) => w.length >= 4 && !COMMON.has(w)).map(stem));
+  return new Set([...wordsOf(text)].filter((w) => w.length >= 4 && !COMMON.has(w)).map(stem).filter((s) => job.has(s))).size;
 }
 
 /** Names right after a number ("0.9416 Dice score", "25 Power BI dashboards"): what the number measures. */
@@ -182,7 +241,9 @@ const wordsOf = (text: string) => {
  * claim experience the resume doesn't show.
  */
 export function newNames(old: string, next: string, allowed: string): string[] {
-  const known = wordsOf(old + " " + allowed);
+  const words = wordsOf(old + " " + allowed);
+  // "VLM" is shown by "VLMs", and "Transformers" by "Transformer".
+  const known = { has: (w: string) => words.has(w) || words.has(`${w}s`) || (w.length > 3 && w.endsWith("s") && words.has(w.slice(0, -1))) };
   const found: string[] = [];
   let sentenceStart = true;
   for (const raw of next.split(/\s+/)) {
@@ -202,7 +263,7 @@ export function newNames(old: string, next: string, allowed: string): string[] {
 
 const MAX_ADDED_SKILLS = 4;
 
-export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine, model?: string, jd = ""): {
+export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine, model?: string, jd = "", limits?: Limits): {
   resume: Resume;
   insights: Insights;
 } {
@@ -210,22 +271,18 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
   const source = resumeText(master);
   const removed: string[] = [];
   const added: string[] = [];
-  let refused = 0;
-  const kept: { old: string; suggested: string; reason: string }[] = [];
-  const take = (old: string, next: string | undefined, allowedNames?: string) => {
-    const r = acceptRewrite(old, next, source, allowedNames, jd);
-    if (!r.ok) {
-      refused++;
-      kept.push({ old, suggested: (next ?? "").trim(), reason: r.reason ?? "" });
-    }
+  const kept: Kept[] = [];
+  const take = (old: string, next: string | undefined, at: string, allowedNames?: string, shown?: string) => {
+    const r = acceptRewrite(old, next, source, allowedNames, jd, { room: limits?.[roomKey(at)], shown });
+    if (!r.ok) kept.push({ old, suggested: (next ?? "").trim(), reason: r.reason ?? "", at });
     return r.text;
   };
   // Same bullets, same order: bullet 1 replaces bullet 1. A missing rewrite keeps the original.
   // A bullet may only name tools from its own job or project (its title, stack and other bullets).
-  const rewriteAll = (olds: string[], news: string[] | undefined, own: string) =>
-    olds.map((o, i) => take(o, news?.[i], own + " " + olds.join(" ")));
+  const rewriteAll = (list: "experience" | "projects", id: string, olds: string[], news: string[] | undefined, own: string) =>
+    olds.map((o, i) => take(o, news?.[i], `${list}:${id}:${i}`, own + " " + olds.join(" "), own));
 
-  out.summary = take(master.summary, ai.summary);
+  out.summary = take(master.summary, ai.summary, "summary", undefined, resumeText({ ...master, summary: "" }));
 
   // Skills: same number of lines. The job's keywords may replace less relevant skills and a line's
   // category may be renamed for the role (like the original app). Each line keeps about its length,
@@ -276,7 +333,7 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
   const expById = new Map(ai.experience?.map((e) => [e.id, e]) ?? []);
   out.experience = out.experience.map((e) => ({
     ...e,
-    bullets: rewriteAll(e.bullets, expById.get(e.id)?.bullets, `${e.role} ${e.company}`),
+    bullets: rewriteAll("experience", e.id, e.bullets, expById.get(e.id)?.bullets, `${e.role} ${e.company}`),
   }));
 
   const projById = new Map(ai.projects?.map((p) => [p.id, p]) ?? []);
@@ -287,7 +344,7 @@ export function applyAiResult(master: Resume, ai: AiTailorOutput, engine: Engine
     const stack = t.stack.map((x) => x.trim()).filter((x) => p.stack.some((y) => y.toLowerCase() === x.toLowerCase()));
     return {
       ...p,
-      bullets: rewriteAll(p.bullets, t.bullets, `${p.name} ${p.stack.join(", ")}`),
+      bullets: rewriteAll("projects", p.id, p.bullets, t.bullets, `${p.name} ${p.stack.join(", ")}`),
       stack: stack.length === p.stack.length ? stack : p.stack,
     };
   });
@@ -322,59 +379,72 @@ type Rewriter = (input: {
   keyword: string;
   context: string;
   job_description: string;
+  previous?: string;
 }) => Promise<string[]>;
 
-/** Where a line lives, and which names it may use (bullets: only its own job or project). */
-function locate(r: Resume, line: string): { set: (t: string) => void; context: string; allowed: string } | null {
-  if (r.summary === line) return { set: (t) => (r.summary = t), context: "professional summary", allowed: resumeText(r) };
-  for (const e of r.experience) {
-    const i = e.bullets.indexOf(line);
-    if (i >= 0)
-      return {
-        set: (t) => (e.bullets[i] = t),
-        context: `${e.role} at ${e.company}`,
-        allowed: `${e.role} ${e.company} ${e.bullets.join(" ")}`,
-      };
-  }
-  for (const p of r.projects) {
-    const i = p.bullets.indexOf(line);
-    if (i >= 0)
-      return {
-        set: (t) => (p.bullets[i] = t),
-        context: `project ${p.name} (${p.stack.join(", ")})`,
-        allowed: `${p.name} ${p.stack.join(" ")} ${p.bullets.join(" ")}`,
-      };
-  }
-  return null;
+/** The key of a line in Limits: "summary" or "<item id>.<bullet>". */
+const roomKey = (at: string) => (at === "summary" ? "summary" : at.split(":").slice(1).join("."));
+
+/**
+ * Where a summary or bullet lives, which names it may use (bullets: only its own job or project), and
+ * where a name it drops is still shown.
+ */
+function locate(master: Resume, at: string): { context: string; allowed: string; shown: string } | null {
+  if (at === "summary") return { context: "professional summary", allowed: resumeText(master), shown: resumeText({ ...master, summary: "" }) };
+  const [list, id] = at.split(":");
+  const e = list === "experience" ? master.experience.find((x) => x.id === id) : undefined;
+  if (e) return { context: `${e.role} at ${e.company}`, allowed: `${e.role} ${e.company} ${e.bullets.join(" ")}`, shown: `${e.role} ${e.company}` };
+  const p = list === "projects" ? master.projects.find((x) => x.id === id) : undefined;
+  if (p)
+    return {
+      context: `project ${p.name} (${p.stack.join(", ")})`,
+      allowed: `${p.name} ${p.stack.join(" ")} ${p.bullets.join(" ")}`,
+      shown: `${p.name} ${p.stack.join(", ")}`,
+    };
+  return null; // skills lines are not rewritten one by one
 }
 
 /**
- * Lines the checks refused get one more AI try, told exactly why. The first suggestion that passes
- * every check is used; otherwise the original stays. Runs in parallel, a few seconds in total.
+ * Lines the checks refused get one more AI try: it sees its refused version and why, and fixes only
+ * that, so the line stays tailored. Of the suggestions that pass every check, the one closest to the
+ * job is used; otherwise the original stays. Runs in parallel, a few seconds in total.
  */
 export async function retryRefused(
   outcome: { resume: Resume; insights: Insights },
   master: Resume,
   jd: string,
   rewrite: Rewriter,
+  limits?: Limits,
 ): Promise<{ resume: Resume; insights: Insights }> {
   const kept = outcome.insights.kept ?? [];
   if (!kept.length) return outcome;
-  const resume = clone(outcome.resume);
+  let resume = clone(outcome.resume);
   const source = resumeText(master);
-  const still: typeof kept = [];
+  const still: Kept[] = [];
   await Promise.all(
     kept.slice(0, 6).map(async (k) => {
-      const where = locate(resume, k.old);
-      if (!where) return still.push(k);
+      const where = k.at ? locate(master, k.at) : null;
+      const path = k.at ? spotPath(resume, k.at) : null;
+      if (!where || !path || getPath(resume, path) !== k.old) return still.push(k);
+      const room = limits?.[roomKey(k.at!)];
+      // Models undershoot a length: ask for the middle of the room.
+      const reason = room ? `${k.reason}; it must be ${room[0]}-${room[1]} characters, about ${Math.round((room[0] + room[1]) / 2)}` : k.reason;
       try {
-        const options = await rewrite({ text: k.old, mode: "retry", keyword: k.reason, context: where.context, job_description: jd });
-        for (const option of options) {
-          const r = acceptRewrite(k.old, option, source, where.allowed, jd);
-          if (r.ok && r.text !== k.old) {
-            where.set(r.text);
-            return;
-          }
+        const options = await rewrite({
+          text: k.old,
+          mode: "retry",
+          keyword: reason.slice(0, 200),
+          context: where.context,
+          job_description: jd,
+          previous: k.suggested.slice(0, 1000),
+        });
+        const passing = options
+          .map((o) => acceptRewrite(k.old, o, source, where.allowed, jd, { room, shown: where.shown }))
+          .filter((r) => r.ok && r.text !== k.old);
+        if (passing.length) {
+          const best = passing.reduce((a, b) => (jobFit(b.text, jd) > jobFit(a.text, jd) ? b : a));
+          resume = setPath(resume, path, best.text);
+          return;
         }
       } catch {
         /* AI busy: keep the original line */
@@ -383,6 +453,73 @@ export async function retryRefused(
     }),
   );
   return { resume, insights: { ...outcome.insights, kept: [...still, ...kept.slice(6)] } };
+}
+
+// ------------------------------------------------------------------ what tailoring changed
+
+/**
+ * Where a tailored line lives, stable when items move: "summary", "experience:<id>:<bullet>",
+ * "projects:<id>:<bullet>" or "skills:<id>". Returns its path in this resume (null if it is gone).
+ */
+export function spotPath(r: Resume, at: string): string | null {
+  if (at === "summary") return "summary";
+  const [list, id, k] = at.split(":");
+  if (list === "skills") {
+    const i = r.skills.findIndex((g) => g.id === id);
+    return i < 0 ? null : `skills.${i}`;
+  }
+  if (list !== "experience" && list !== "projects") return null;
+  const i = r[list].findIndex((x) => x.id === id);
+  return i < 0 || r[list][i].bullets[Number(k)] === undefined ? null : `${list}.${i}.bullets.${k}`;
+}
+
+/** The spot of a field path ("projects.2.bullets.0" -> "projects:<id>:0"), if tailoring touches it. */
+export function spotOf(r: Resume, path: string): string | undefined {
+  if (path === "summary") return "summary";
+  const m = path.match(/^(experience|projects)\.(\d+)\.bullets\.(\d+)$/);
+  if (m) {
+    const item = r[m[1] as "experience" | "projects"][Number(m[2])];
+    return item && `${m[1]}:${item.id}:${m[3]}`;
+  }
+  const s = path.match(/^skills\.(\d+)\.items$/);
+  const g = s && r.skills[Number(s[1])];
+  return g ? `skills:${g.id}` : undefined;
+}
+
+export function spotValue(r: Resume, at: string): LineValue | undefined {
+  const path = spotPath(r, at);
+  if (!path) return undefined;
+  const v = getPath(r, path) as LineValue;
+  return typeof v === "string" ? v : { category: v.category, items: [...v.items] };
+}
+
+export function setSpot(r: Resume, at: string, value: LineValue): Resume {
+  const path = spotPath(r, at);
+  if (!path) return r;
+  return typeof value === "string" ? setPath(r, path, value) : setPath(r, path, { ...(getPath(r, path) as object), ...value });
+}
+
+export const lineText = (v: LineValue) => (typeof v === "string" ? v : `${v.category ? `${v.category}: ` : ""}${v.items.join(", ")}`);
+
+/**
+ * Every line the tailored resume words differently from the master, so each can be undone on its own.
+ * On an uploaded PDF a skills line's label is part of the file, so only its items count.
+ */
+export function listChanges(master: Resume, tailored: Resume): Change[] {
+  const pdf = !!master.layout.source;
+  const out: Change[] = [];
+  const add = (at: string) => {
+    const before = spotValue(master, at);
+    let after = spotValue(tailored, at);
+    if (before === undefined || after === undefined) return;
+    if (pdf && typeof before !== "string" && typeof after !== "string") after = { ...after, category: before.category };
+    if (lineText(before) !== lineText(after)) out.push({ at, before, after });
+  };
+  add("summary");
+  for (const g of tailored.skills) add(`skills:${g.id}`);
+  for (const e of tailored.experience) e.bullets.forEach((_, k) => add(`experience:${e.id}:${k}`));
+  for (const p of tailored.projects) p.bullets.forEach((_, k) => add(`projects:${p.id}:${k}`));
+  return out;
 }
 
 // ------------------------------------------------------------------ offline engine

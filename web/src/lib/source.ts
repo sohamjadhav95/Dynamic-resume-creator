@@ -7,8 +7,8 @@
 // as it was: fonts, photo, columns, colours, lines.
 
 import { renderFile, type ExtractedFile, type FileBlock, type RenderResult } from "./api";
-import { getPath, normalizeResume, resumeText, setPath, type Resume } from "./schema";
-import type { Insights } from "./tailor";
+import { getPath, normalizeResume, resumeText, setPath, uid, type Resume } from "./schema";
+import { spotOf, type Insights } from "./tailor";
 import { getSupabase } from "./supabase";
 
 export interface SourceBlock extends FileBlock {
@@ -326,6 +326,70 @@ export function lineLimits(r: Resume): Record<string, [number, number]> {
   return out;
 }
 
+// ------------------------------------------------------------------ swapping in a new project
+
+export interface NewProject {
+  title: string;
+  stack: string[];
+  bullet: string;
+}
+
+/** How many characters a new first bullet for project `index` should have: its lines on the PDF, or about its length now. */
+export function bulletRoom(r: Resume, index: number): [number, number] {
+  const b = sourceOf(r)?.blocks.find((x) => x.path === `projects.${index}.bullets.0`);
+  if (b) return room(b);
+  const n = r.projects[index]?.bullets[0]?.length || 160;
+  return [Math.round(n * 0.8), Math.round(n * 1.1)];
+}
+
+/** A title cut to `max` characters: at a natural break ("Name: what it is"), else at a word. */
+function fitTitle(title: string, max: number): string {
+  if (title.length <= max) return title;
+  const head = title.split(/:\s|\s[–—-]\s/)[0];
+  return head.length <= max ? head : title.slice(0, max).replace(/\s+\S*$/, "");
+}
+
+/**
+ * Puts a new project in place of project `index` (a new id: nothing of the old one carries over). On an
+ * uploaded PDF it goes into the old project's own lines (title, tools, first bullet), each cut to fit
+ * them, so the page keeps its design; its dates and any further bullets stay for the person to edit.
+ */
+export function replaceProject(r: Resume, index: number, np: NewProject): Resume {
+  const old = r.projects[index];
+  if (!old) return r;
+  const src = sourceOf(r);
+  const next = { ...old, id: uid("pr"), name: np.title, stack: np.stack, link: "", bullets: [np.bullet] };
+  if (!src) return setPath(r, `projects.${index}`, { ...next, dates: "" });
+
+  // The title and tools lines sit just above the first bullet, before the previous item's text.
+  const first = src.blocks.findIndex((b) => b.path === `projects.${index}.bullets.0`);
+  const above: SourceBlock[] = [];
+  for (let j = first - 1; first >= 0 && j >= 0; j--) {
+    const b = src.blocks[j];
+    if (b.path || b.kind === "heading" || b.page !== src.blocks[first].page) break;
+    above.unshift(b);
+  }
+  const pool = above.length ? above : src.blocks.filter((b) => !b.path && b.kind !== "heading");
+  const find = (text: string, skip?: SourceBlock) =>
+    pool
+      .filter((b) => b !== skip && text.trim())
+      .map((b) => ({ b, score: similarity(text, b.text) }))
+      .sort((a, b) => b.score - a.score)
+      .find((x) => x.score >= 0.75)?.b;
+  const titleBlock = find(old.name);
+  const stackBlock = find(old.stack.join(" "), titleBlock);
+
+  const title = titleBlock ? fitTitle(np.title, room(titleBlock)[1]) : np.title;
+  const sep = stackBlock ? separator(stackBlock.text) : ", ";
+  const stack = [...np.stack];
+  if (stackBlock) while (stack.length > 1 && stack.join(sep).length > room(stackBlock)[1]) stack.pop();
+
+  let out = setPath(r, `projects.${index}`, { ...next, name: title, stack, dates: old.dates, bullets: [np.bullet, ...old.bullets.slice(1)] });
+  if (titleBlock) out = setPath(out, `layout.source.edits.${titleBlock.id}`, title);
+  if (stackBlock) out = setPath(out, `layout.source.edits.${stackBlock.id}`, stack.join(sep));
+  return out;
+}
+
 /**
  * After tailoring an uploaded PDF: write the new text in and check it fits. A rewrite that needs more
  * lines than its block has, or would leave an empty line, goes back to the master's text and is listed
@@ -355,6 +419,7 @@ export async function fitToPdf(
     const lines = `${b.lines.length} line${b.lines.length > 1 ? "s" : ""}`;
     const [min, max] = room(b);
     kept.push({
+      at: spotOf(master, b.path),
       old: Array.isArray(before) ? before.join(b.sep ?? ", ") : String(before),
       suggested: tried,
       reason: short

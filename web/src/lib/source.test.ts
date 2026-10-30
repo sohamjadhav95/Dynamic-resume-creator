@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
 import type { FileBlock } from "./api";
 import { normalizeResume, setPath } from "./schema";
-import { a4Limit, blockText, keepMapped, lineLimits, mapBlocks, paperName, pendingEdits, place, room, sheetsAsUploaded, similarity, type Source } from "./source";
+import {
+  a4Limit,
+  blockText,
+  keepMapped,
+  lineLimits,
+  mapBlocks,
+  paperName,
+  pendingEdits,
+  place,
+  replaceProject,
+  room,
+  sheetsAsUploaded,
+  similarity,
+  type Source,
+} from "./source";
 
 const resume = normalizeResume({
   summary: "Data analyst with 3 years of experience turning sales data into dashboards.",
@@ -101,6 +115,38 @@ describe("your PDF", () => {
     const r = withSource();
     const limits = lineLimits(r);
     expect(Object.keys(limits)).toEqual(expect.arrayContaining(["summary", `${r.experience[0].id}.0`, `${r.experience[0].id}.1`]));
+  });
+
+  it("puts a project idea in place of a project, in that project's own lines", () => {
+    const cv = normalizeResume({
+      ...resume,
+      projects: [
+        { name: "Basket: Market Basket Analysis", stack: ["pandas", "mlxtend"], bullets: ["Found product pairs that lifted cross-sell by 7% in a pilot."] },
+      ],
+    });
+    const pblocks: FileBlock[] = [
+      blk("p1-0", "PROJECTS", "heading", ""),
+      blk("p1-1", "Basket: Market Basket Analysis", "text", ""),
+      blk("p1-2", "2024", "text", ""),
+      blk("p1-3", "pandas, mlxtend", "text", ""),
+      blk("p1-4", "Found product pairs that lifted cross-sell by 7% in a pilot."),
+    ];
+    const source: Source = { file: "a".repeat(32), name: "cv.pdf", pages: [{ width: 612, height: 792 }], blocks: mapBlocks(cv, pblocks), edits: {} };
+    const r = normalizeResume({ ...cv, layout: { ...cv.layout, source } });
+    expect(source.blocks.find((b) => b.id === "p1-4")?.path).toBe("projects.0.bullets.0");
+    const idea = { title: "Shelf Gap Detector: YOLO on store photos", stack: ["PyTorch", "YOLO", "OpenCV", "FastAPI"], bullet: "Trained a YOLO model to spot empty shelves in store photos." };
+    const out = replaceProject(r, 0, idea);
+    expect(out.projects[0].id).not.toBe(r.projects[0].id);
+    expect(out.projects[0].bullets[0]).toBe(idea.bullet);
+    // The title and tools lines hold only as many characters as before: cut at a natural break, and drop tools from the end.
+    const edits = out.layout.source!.edits;
+    expect(edits["p1-1"]).toBe("Shelf Gap Detector");
+    expect(edits["p1-3"].length).toBeLessThanOrEqual("pandas, mlxtend".length);
+    expect(edits["p1-3"]).toBe("PyTorch, YOLO");
+    expect(edits["p1-2"]).toBeUndefined(); // dates stay
+    expect(r.layout.source!.edits).toEqual({}); // the original is untouched
+    // A template resume just gets the new project.
+    expect(replaceProject(cv, 0, idea).projects[0]).toMatchObject({ name: idea.title, stack: idea.stack, bullets: [idea.bullet], dates: "" });
   });
 
   it("keeps the PDF details when a resume is saved and loaded", () => {

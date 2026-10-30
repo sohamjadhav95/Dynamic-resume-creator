@@ -216,7 +216,7 @@ async def rewrite(req: RewriteRequest, request: Request):
         run_chain(
             attempts,
             prompts.rewrite_system(),
-            prompts.rewrite_prompt(req.text, req.mode, req.keyword, req.context, req.job_description),
+            prompts.rewrite_prompt(req.text, req.mode, req.keyword, req.context, req.job_description, req.previous),
             RewriteOutput,
             temperature=0.7,
             stall_seconds=40,

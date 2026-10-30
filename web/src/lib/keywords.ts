@@ -14,6 +14,7 @@ export interface Keyword {
 
 export interface KeywordMatch extends Keyword {
   found: boolean;
+  shown?: boolean; // used in the summary, a job, a project... (false: only listed in the skills)
 }
 
 interface Entry {
@@ -163,7 +164,10 @@ export function matchKeywords(keywords: Keyword[], resume: string): KeywordMatch
   return keywords.map((k) => ({ ...k, found: containsTerm(resume, k.term) }));
 }
 
-/** 0-100. Requirements count double; soft skills count half. */
+/**
+ * 0-100. Requirements count double; soft skills count half. A skill only listed among the skills,
+ * never shown in the summary, a job or a project, counts half: the whole resume makes the match.
+ */
 export function matchScore(matches: KeywordMatch[]): number {
   if (!matches.length) return 0;
   let total = 0;
@@ -171,7 +175,7 @@ export function matchScore(matches: KeywordMatch[]): number {
   for (const m of matches) {
     const w = (m.importance === "must" ? 2 : 1) * (m.soft ? 0.5 : 1);
     total += w;
-    if (m.found) got += w;
+    if (m.found) got += m.shown === false ? w / 2 : w;
   }
   return Math.round((100 * got) / total);
 }

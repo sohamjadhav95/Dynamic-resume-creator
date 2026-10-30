@@ -1,10 +1,12 @@
 // Left column: 1 · Job  2 · Sections  3 · Design
 
 import { useState } from "react";
+import { wordDiff } from "../lib/diff";
 import { guessJob } from "../lib/keywords";
 import { SECTION_LABELS, clone, uid, type Resume, type SectionKey, type TemplateId } from "../lib/schema";
 import { useSelection } from "../lib/selection";
 import { MASTER, useStore } from "../lib/store";
+import { lineText, setSpot, spotPath, spotValue, type LineValue } from "../lib/tailor";
 import { Icon } from "./Icon";
 import { Panel, useToast } from "./ui";
 
@@ -13,6 +15,7 @@ export function LeftPanel({ onTailor, busy }: { onTailor: () => void; busy: bool
   return (
     <>
       <JobCard onTailor={onTailor} busy={busy} />
+      <ChangesCard />
       {resume.layout.source ? (
         <PdfCard />
       ) : (
@@ -152,6 +155,143 @@ function JobCard({ onTailor, busy }: { onTailor: () => void; busy: boolean }) {
           Tailoring rewords your <strong>master profile</strong> into a new version for this job: same bullets, same
           length. Your master stays untouched.
         </p>
+      </div>
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------------ What changed (a tailored version)
+
+/** "Summary", "Google Summer of Code 2026 · bullet 2", "PrediCT Studio", "Skills · Languages". */
+function spotLabel(r: Resume, at: string): string {
+  if (at === "summary") return "Summary";
+  const [list, id, k] = at.split(":");
+  if (list === "skills") {
+    const g = r.skills.find((x) => x.id === id);
+    return g?.category ? `Skills · ${g.category}` : "Skills";
+  }
+  const item = list === "experience" ? r.experience.find((x) => x.id === id) : r.projects.find((x) => x.id === id);
+  if (!item) return "";
+  const name = ("name" in item ? item.name : item.company || item.role).split(/\s+[|–—]\s+|:\s/)[0].trim();
+  return item.bullets.length > 1 ? `${name} · bullet ${Number(k) + 1}` : name;
+}
+
+function Diff({ before, after }: { before: string; after: string }) {
+  return (
+    <p className="change-text">
+      {wordDiff(before, after).map((p, i) => {
+        const text = `${i ? " " : ""}${p.text}`;
+        return p.kind === "add" ? <ins key={i}>{text}</ins> : p.kind === "del" ? <del key={i}>{text}</del> : <span key={i}>{text}</span>;
+      })}
+    </p>
+  );
+}
+
+/**
+ * Every line tailoring changed, shown word by word, each with its own Undo. Rewrites the checks
+ * refused are listed too, with the reason, so the person can still use one.
+ */
+function ChangesCard() {
+  const { resume, edit, version } = useStore();
+  const { setEditing } = useSelection();
+  if (!version) return null;
+  const pdf = !!resume.layout.source;
+  // On an uploaded PDF a skills line's label is part of the file: only its items change.
+  const show = (v: LineValue) => (pdf && typeof v !== "string" ? v.items.join(", ") : lineText(v));
+  const changes = (version.insights.changes ?? []).flatMap((c) => {
+    const now = spotValue(resume, c.at);
+    if (now === undefined) return [];
+    const state = show(now) === show(c.after) ? "applied" : show(now) === show(c.before) ? "undone" : "edited";
+    return [{ ...c, state }];
+  });
+  const seen = new Set(changes.map((c) => c.at));
+  const pending = (version.insights.kept ?? []).flatMap((k) => {
+    if (!k.at || seen.has(k.at) || k.at.startsWith("skills:") || !k.suggested || k.suggested === k.old) return [];
+    const now = spotValue(resume, k.at);
+    if (typeof now !== "string") return [];
+    seen.add(k.at);
+    return [{ ...k, at: k.at, used: now === k.suggested }];
+  });
+  if (!changes.length && !pending.length) return null;
+
+  const set = (at: string, value: LineValue) => edit(setSpot(resume, at, value));
+  const applied = changes.filter((c) => c.state === "applied");
+  const setAll = (pick: "before" | "after") =>
+    edit(changes.reduce((r, c) => setSpot(r, c.at, c[pick]), resume));
+  const reveal = (at: string) => {
+    const path = spotPath(resume, at);
+    if (path) setEditing(at.startsWith("skills:") ? `${path}.items` : path);
+  };
+
+  return (
+    <Panel
+      flat
+      id="step-changes"
+      icon="pen"
+      title="What changed for this job"
+      extra={`${applied.length} of ${changes.length} in use`}
+    >
+      <div className="stack" style={{ gap: 10 }}>
+        <div className="row">
+          <p className="hint grow" style={{ margin: 0 }}>
+            <ins className="legend">New words</ins> <del className="legend">removed</del>. Click a name to see the line on
+            your page.
+          </p>
+          {changes.length > 1 &&
+            (applied.length ? (
+              <button className="btn btn-ghost btn-sm" onClick={() => setAll("before")}>
+                <Icon name="undo" size={14} /> Undo all
+              </button>
+            ) : (
+              <button className="btn btn-ghost btn-sm" onClick={() => setAll("after")}>
+                <Icon name="redo" size={14} /> Redo all
+              </button>
+            ))}
+        </div>
+        <ul className="changes">
+          {changes.map((c) => (
+            <li key={c.at} className={`change ${c.state === "undone" ? "is-off" : ""}`}>
+              <div className="change-head">
+                <button className="change-where" onClick={() => reveal(c.at)} title="Show this line on the page">
+                  {spotLabel(resume, c.at)}
+                </button>
+                {c.state === "edited" && <span className="badge">Edited by you</span>}
+                {c.state === "undone" ? (
+                  <button className="btn btn-sm" onClick={() => set(c.at, c.after)}>
+                    <Icon name="redo" size={14} /> Redo
+                  </button>
+                ) : (
+                  <button className="btn btn-sm" onClick={() => set(c.at, c.before)} title="Back to your original line">
+                    <Icon name="undo" size={14} /> Undo
+                  </button>
+                )}
+              </div>
+              <Diff before={show(c.before)} after={show(c.after)} />
+            </li>
+          ))}
+          {pending.map((k) => (
+            <li key={k.at} className={`change is-pending ${k.used ? "" : "is-off"}`}>
+              <div className="change-head">
+                <button className="change-where" onClick={() => reveal(k.at)} title="Show this line on the page">
+                  {spotLabel(resume, k.at)}
+                </button>
+                {k.used ? (
+                  <button className="btn btn-sm" onClick={() => set(k.at, k.old)}>
+                    <Icon name="undo" size={14} /> Undo
+                  </button>
+                ) : (
+                  <button className="btn btn-sm" onClick={() => set(k.at, k.suggested)}>
+                    Use it anyway
+                  </button>
+                )}
+              </div>
+              <Diff before={k.old} after={k.suggested} />
+              <p className="change-why">
+                <Icon name="info" size={13} /> Not used: the AI's version {k.reason}.
+              </p>
+            </li>
+          ))}
+        </ul>
       </div>
     </Panel>
   );

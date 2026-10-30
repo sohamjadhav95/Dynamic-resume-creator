@@ -71,8 +71,13 @@ The default **Original** style reproduces the owner's PDF (A4, 15 mm sides, 17 p
 - **Studio layout**: build on the left, the real page in the middle, match score and AI tools on the right.
   On tablets the right panel becomes a tab; on phones there is a bottom tab bar.
 - **Master profile + versions**: one master profile; each job gets its own tailored version.
-- **Instant match score** (runs in the browser, no AI needed): required vs nice-to-have keywords, found and missing,
-  and the job post with highlights.
+- **Instant match score** (runs in the browser, no AI needed) over the whole resume: required vs nice-to-have
+  keywords, found and missing, how many each section shows, and the job post with highlights. A keyword only listed
+  among the skills counts half; shown in the summary, a job or a project, it counts fully.
+- **What changed for this job**: every line tailoring rewrote (summary, bullets, skills), word by word, each with its
+  own Undo / Redo. Rewrites the honesty checks refused are listed with the reason, to use anyway if you choose.
+- **Project ideas** for the job's gaps; once you have built one, it can replace a project (on an uploaded PDF, in that
+  project's own lines).
 - **Click-to-edit page** with undo/redo and AI rewrite of any bullet (stronger, shorter, add a keyword, fix grammar).
 - **Resizable, collapsible panels**: drag the edge of the side columns, or collapse them to a slim rail.
 - **Accounts are optional**: guests save in this browser; signing in (Google or email link) saves resumes, versions

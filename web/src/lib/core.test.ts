@@ -6,7 +6,22 @@ import { heuristicParse, tryJson } from "./importing";
 import { containsTerm, extractKeywords, guessJob, highlight, matchKeywords, matchScore } from "./keywords";
 import { normalizeResume, resumeText, setPath, splitList, uuid, visibleResume } from "./schema";
 import { _reducerForTests as reducer, initialState, activeResume } from "./store";
-import { acceptRewrite, applyAiResult, isSupported, jobOnlyWords, newNames, offlineTailor, type AiTailorOutput } from "./tailor";
+import { wordDiff } from "./diff";
+import { computeMatch } from "./match";
+import {
+  acceptRewrite,
+  applyAiResult,
+  isSupported,
+  jobOnlyWords,
+  lineText,
+  listChanges,
+  newNames,
+  offlineTailor,
+  retryRefused,
+  setSpot,
+  spotPath,
+  type AiTailorOutput,
+} from "./tailor";
 
 const legacy = JSON.parse(readFileSync(new URL("../../../examples/legacy_master_resume.json", import.meta.url), "utf8"));
 
@@ -295,5 +310,101 @@ describe("tester findings", () => {
     const items = applyAiResult(master, dup, "groq").resume.skills.flatMap((g) => g.items.map((x) => x.toLowerCase()));
     expect(new Set(items).size).toBe(items.length);
   });
+});
 
+describe("tailoring for a real job post", () => {
+  const jd =
+    "AI Research Scientist, Computer Vision. Build custom VLMs for construction drawings. Work on document understanding, " +
+    "spatial reasoning, model accuracy and production deployment.";
+
+  it("knows a name in its singular or plural form", () => {
+    expect(newNames("AI Engineer.", "AI Engineer building VLM systems.", "Skills: Vision Language Models (VLMs)")).toEqual([]);
+    expect(newNames("Used Transformers.", "Used a Transformer.", "")).toEqual([]);
+    expect(newNames("Used U-Net on CT scans.", "Used U-Net on CT/MRI scans.", "")).toEqual(["CT/MRI"]);
+  });
+
+  it("lets a line use the job's general words, never the job's field", () => {
+    const old = "Engineered a domain-specific CRNN pipeline with LLM post-processing to transcribe historical manuscripts.";
+    const general = "Built a domain-specific CRNN pipeline with LLM post-processing for document understanding of historical manuscripts.";
+    expect(jobOnlyWords(general, old, jd)).toEqual([]);
+    const field = "Built a domain-specific CRNN pipeline with LLM post-processing to read construction drawings and manuscripts.";
+    expect(jobOnlyWords(field, old, jd)).toEqual(["construction", "drawings"]);
+  });
+
+  it("on an uploaded PDF, a line may use the room its lines have", () => {
+    const old = "Benchmarked U-Net against TotalSegmentator, achieving a 0.9416 Dice score and ~63x faster inference.";
+    const longer = "Benchmarked U-Net against TotalSegmentator, reaching a 0.9416 Dice score and ~63x faster inference on targeted diagnostic workflows.";
+    const whole = `${old} Built targeted diagnostic workflows.`;
+    expect(acceptRewrite(old, longer, whole).ok).toBe(false);
+    expect(acceptRewrite(old, longer, whole, undefined, "", { room: [90, 200] }).ok).toBe(true);
+    expect(acceptRewrite(old, longer, whole, undefined, "", { room: [90, 120] })).toMatchObject({ ok: false, reason: expect.stringContaining("too long") });
+  });
+
+  it("does not let a line get vaguer: the names that say what it is about stay", () => {
+    const old = "Benchmarked soft-coverage U-Net against TotalSegmentator on CAC scans, achieving a 0.9416 Dice score.";
+    const vaguer = "Benchmarked a model against TotalSegmentator on cardiac scans, achieving a 0.9416 Dice score in testing.";
+    expect(acceptRewrite(old, vaguer, old + " cardiac testing", undefined, "", { shown: "PrediCT Studio" })).toMatchObject({
+      ok: false,
+      reason: "dropped U-Net, CAC, which says what the line is about",
+    });
+    // A tool still shown on the project's tools line may go, to make room for the job's words.
+    const tools = "Built a clinical workstation (FastAPI, Three.js) that scores coronary calcium from CT scans.";
+    const cut = "Built a clinical workstation (FastAPI) that scores coronary calcium from CT scans for production.";
+    expect(acceptRewrite(tools, cut, tools, undefined, "Ship to production.", { shown: "PrediCT Studio Python, FastAPI, Three.js" }).ok).toBe(true);
+  });
+
+  it("lists every changed line, and each one can be undone and redone on its own", () => {
+    const master = normalizeResume(sample);
+    const tailored = setPath(setPath(master, "summary", "A new summary."), "experience.0.bullets.1", "A new bullet.");
+    const changes = listChanges(master, tailored);
+    expect(changes.map((c) => c.at)).toEqual(["summary", `experience:${master.experience[0].id}:1`]);
+    const undone = setSpot(tailored, changes[1].at, changes[1].before);
+    expect(undone.experience[0].bullets[1]).toBe(master.experience[0].bullets[1]);
+    expect(undone.summary).toBe("A new summary.");
+    // still found after the person moves the job down
+    const moved = { ...tailored, experience: [...tailored.experience].reverse() };
+    expect(spotPath(moved, changes[1].at)).toBe(`experience.${moved.experience.length - 1}.bullets.1`);
+    expect(lineText({ category: "Tools", items: ["Go", "SQL"] })).toBe("Tools: Go, SQL");
+  });
+
+  it("a refused line gets one more try that keeps it tailored", async () => {
+    const master = normalizeResume(sample);
+    const old = master.experience[0].bullets[0];
+    const at = `experience:${master.experience[0].id}:0`;
+    const outcome = {
+      resume: master,
+      insights: { ...offlineTailor(master, jd).insights, kept: [{ old, suggested: `${old} for construction`, reason: "uses construction", at }] },
+    };
+    const seen: { previous?: string }[] = [];
+    const plain = old.replace("Built", "Made");
+    const tailored = old.replace("in Go", "in Go for production");
+    const result = await retryRefused(outcome, master, jd, async (input) => {
+      seen.push(input);
+      return [plain, tailored];
+    });
+    expect(seen[0].previous).toBe(`${old} for construction`);
+    expect(result.resume.experience[0].bullets[0]).toBe(tailored); // the one closest to the job
+    expect(result.insights.kept).toEqual([]);
+  });
+
+  it("scores the whole resume: a skill only in the skills list counts half", () => {
+    const listed = matchScore([{ term: "Kafka", importance: "must", found: true, shown: false }]);
+    const shown = matchScore([{ term: "Kafka", importance: "must", found: true, shown: true }]);
+    expect([listed, shown]).toEqual([50, 100]);
+    const master = normalizeResume(sample);
+    const onlySkills = setPath(master, "skills.0.items", [...master.skills[0].items, "Rust"]);
+    const match = computeMatch(onlySkills, "We need Rust engineers for a backend team building fast services.")!;
+    expect(match.matches.find((m) => m.term === "Rust")).toMatchObject({ found: true, shown: false });
+    expect(match.sections.find((s) => s.name === "Skills")?.found).toBeGreaterThan(0);
+  });
+
+  it("shows a change word by word", () => {
+    expect(wordDiff("Led the AI vertical for students", "Led the AI and ML vertical for 80+ students")).toEqual([
+      { text: "Led the AI", kind: "same" },
+      { text: "and ML", kind: "add" },
+      { text: "vertical for", kind: "same" },
+      { text: "80+", kind: "add" },
+      { text: "students", kind: "same" },
+    ]);
+  });
 });

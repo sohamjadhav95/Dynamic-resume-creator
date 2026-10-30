@@ -99,6 +99,11 @@ SAME SIZE, BETTER WORDS (strict):
   name, stack and the bullet itself) matches what the job asks for, put it first, and use the job's
   words for it where they truthfully apply. Drop parts the job does not care about to make room,
   but keep every number. Only mention tools from that same job's or project's stack.
+  The job's general words (production, evaluation, accuracy, deployment, document understanding,
+  real-world data...) are fine for the same work. Never give a line the employer's industry or
+  subject ("construction", "drawings", "healthcare") unless that line's own work was in it.
+  Tailoring is not shortening: a rewritten line must read closer to the job post than before, and
+  keeps its own subject words (datasets, models, domain terms like "MRI" or "loan defaults").
 - Tone: {TONES[options.tone]}
 {extra}
 WHAT TO RETURN (JSON only, matching the schema):
@@ -165,7 +170,8 @@ def tailor_prompt(resume: dict, job_description: str, limits: dict | None = None
     groups = len(resume.get("skills", []))
     room = (
         '\nThis resume is the person\'s own PDF: a line that shows "min" and "max" must be rewritten to between '
-        "min and max characters, so it fills exactly the lines it has on the page."
+        "min and max characters, so it fills exactly the lines it has on the page. Aim for the middle: a line "
+        "shorter than min leaves an empty line on the page."
         if limits
         else ""
     )
@@ -181,8 +187,14 @@ REWRITE_MODES = {
     "keyword": "Naturally include the keyword '{keyword}' ONLY if it truthfully fits the bullet. Same length.",
     "fix": "Fix grammar, spelling and clarity. Keep the meaning and length.",
     "retry": (
-        "Rewrite it for the target job. A previous rewrite was refused because it {keyword}. Fix exactly that: "
-        "same facts, every number kept, no tools or terms the original doesn't mention, same length."
+        "Rewrite it for the target job. The REFUSED VERSION below was refused because it {keyword}. Fix exactly "
+        "that and keep the rest of its alignment with the job: same facts, every number kept, the job's general "
+        "words only where they describe this same work, and no tool, field or domain the original doesn't show."
+    ),
+    "project": (
+        "This is a project idea the candidate has now built. Write it as one resume bullet for that project: past "
+        "tense, what was built, with which tools, and what it does. No numbers, users or results that are not in "
+        "the idea. {keyword}"
     ),
 }
 
@@ -192,15 +204,17 @@ def rewrite_system() -> str:
 You rewrite single resume bullet points.
 {TRUTH_RULES}
 {PLAIN_LANGUAGE}
-Return JSON: {{"options": [3 alternative rewrites]}}. Unless the goal is to make it shorter, each
-option must be about as long as the original (within 90%-110% of its characters). No ending period
+Return JSON: {{"options": [3 alternative rewrites]}}. Unless the goal is to make it shorter or gives a
+length, each option must be about as long as the original (within 90%-110% of its characters). No ending period
 needed, no quotation marks around the text.
 """
 
 
-def rewrite_prompt(text: str, mode: str, keyword: str, context: str, job_description: str) -> str:
+def rewrite_prompt(text: str, mode: str, keyword: str, context: str, job_description: str, previous: str = "") -> str:
     goal = REWRITE_MODES[mode].format(keyword=keyword)
-    parts = [f"GOAL: {goal}", f"BULLET ({len(text)} chars): {text}"]
+    parts = [f"GOAL: {goal}", f"{'PROJECT IDEA' if mode == 'project' else 'BULLET'} ({len(text)} chars): {text}"]
+    if previous and mode == "retry":
+        parts.append(f"REFUSED VERSION: {previous}")
     if context:
         parts.append(f"CONTEXT (role / project): {context}")
     if job_description:

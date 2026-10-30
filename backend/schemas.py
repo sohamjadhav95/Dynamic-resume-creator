@@ -36,10 +36,11 @@ class TailorRequest(BaseModel):
 
 class RewriteRequest(BaseModel):
     text: str = Field(min_length=3, max_length=800)
-    mode: Literal["shorter", "impact", "keyword", "fix", "retry"] = "impact"
+    mode: Literal["shorter", "impact", "keyword", "fix", "retry", "project"] = "impact"
     keyword: str = Field("", max_length=200)
     context: str = Field("", max_length=300)
     job_description: str = Field("", max_length=MAX_JD_CHARS)
+    previous: str = Field("", max_length=1000)  # retry: the refused rewrite, to fix rather than start over
 
 
 class ParseRequest(BaseModel):
